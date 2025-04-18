@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MTSS Assistant | Nsightz Intervention Resource Creator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <header class="app-header">
+      <div class="logo-container">
+        <img src="./Nsightz Logo.png" alt="Nsightz MTSS Assistant Logo" class="logo">
+        <h1>MTSS Assistant</h1>
+      </div>
+      <div class="school-level-selector">
+        <label for="school-level">School Level:</label>
+        <select id="school-level">
+          <option value="Elementary">Elementary School</option>
+          <option value="Middle">Middle School</option>
+          <option value="High">High School</option>
+        </select>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <div class="chat-container">
+        <div class="messages" id="messages">
+          <!-- Messages will be added here dynamically -->
+        </div>
+
+        <div class="user-input-container">
+          <div class="suggested-buttons" id="suggested-buttons">
+            <!-- Suggested buttons will be added here dynamically -->
+          </div>
+          <div class="action-buttons-container">
+            <!-- Generate Resource button will be added here -->
+          </div>
+          <div class="input-box">
+            <textarea id="user-input" placeholder="Type your message here..."></textarea>
+            <button id="send-button" class="send-button">
+              <i class="fas fa-paper-plane"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="resource-preview-container" id="resource-preview-container" style="display: none;">
+        <div class="resource-preview-header">
+          <h2>Resource Preview</h2>
+          <div class="resource-actions">
+            <button id="download-pdf" class="action-button">
+              <i class="fas fa-file-pdf"></i> Download PDF
+            </button>
+            <button id="export-google-docs" class="action-button">
+              <i class="fas fa-file-export"></i> Export to Google Docs
+            </button>
+            <button id="back-to-chat" class="action-button">
+              <i class="fas fa-arrow-left"></i> Back to Chat
+            </button>
+          </div>
+        </div>
+        <div class="resource-content" id="resource-content">
+          <!-- Generated resource content will be displayed here -->
+        </div>
+        <div class="nsightz-footer">
+          <div class="nsightz-footer-content">
+            <img src="./Nsightz Logo.png" alt="Nsightz Logo" class="footer-logo">
+            <p class="copyright-text">© 2025 Nsightz Inc. All Rights Reserved</p>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <div class="cta-banner" id="cta-banner" style="display: none;">
+      <div class="cta-content">
+        <p>Want to streamline your MTSS process? Try <strong>Nsightz MTSS</strong> for comprehensive progress monitoring, quick logging, and improved intervention fidelity tracking.</p>
+        <button class="cta-button" id="cta-button">Learn More</button>
+      </div>
+      <button class="cta-close" id="cta-close">×</button>
+    </div>
+  </div>
+
+  <div class="modal" id="loading-modal">
+    <div class="modal-content loading-content">
+      <div class="spinner"></div>
+      <p>Processing your request...</p>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/showdown/2.1.0/showdown.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
