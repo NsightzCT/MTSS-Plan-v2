@@ -13,3 +13,11 @@
     }
   ]
 } 
+        {
+          "rewrites": [
+            {
+              "source": "/tools.nsightz.com/:interventions*",
+              "destination": "/index.html"  // Or the entry point of your new site
+            }
+          ]
+        }
