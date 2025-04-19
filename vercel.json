@@ -12,10 +12,6 @@
   ],
   "routes": [
     {
-      "src": "/interventions/api/(.*)",
-      "dest": "server.js"
-    },
-    {
       "src": "/api/(.*)",
       "dest": "server.js"
     },
@@ -23,23 +19,19 @@
       "handle": "filesystem"
     },
     {
-      "src": "/interventions",
-      "dest": "/interventions/index.html"
+      "src": "/(.*\\.(js|css|png|jpg|svg))",
+      "dest": "/public/$1"
     },
     {
-      "src": "/interventions/(.*\\.(js|css|png|jpg|svg))",
-      "dest": "/interventions/$1"
-    },
-    {
-      "src": "/interventions/(.*)",
-      "dest": "/interventions/index.html"
+      "src": "/(.*)",
+      "dest": "/public/index.html"
     }
   ],
   "cleanUrls": true,
   "trailingSlash": false,
   "headers": [
     {
-      "source": "/interventions/(.*)",
+      "source": "/(.*)",
       "headers": [
         {
           "key": "Cache-Control",

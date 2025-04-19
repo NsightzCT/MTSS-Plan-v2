@@ -37,6 +37,7 @@ const limiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  trustProxy: true // Explicitly trust the proxy
 });
 
 // Apply rate limiting to all routes
