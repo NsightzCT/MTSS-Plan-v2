@@ -14,6 +14,9 @@ const sampleInterventionPlan = require('./public/interventionData.js').sampleInt
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Configure Express to trust proxy headers for Vercel deployment
+app.set('trust proxy', 1);
+
 // Rate limiting configuration
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -32,16 +35,18 @@ app.use(limiter);
 app.use(cors());
 app.use(bodyParser.json());
 
-// Serve static files from the public directory
-app.use('/interventions', express.static(path.join(__dirname, 'public')));
+// Add debug logging middleware at the top after other middleware
+app.use((req, res, next) => {
+  console.log(`[DEBUG] Incoming request: ${req.method} ${req.path}`);
+  next();
+});
 
-// Check for required environment variables
+// Configure OpenAI
 if (!process.env.OPENAI_API_KEY) {
   console.error('ERROR: OPENAI_API_KEY is not set in environment variables');
   process.exit(1);
 }
 
-// Configure OpenAI
 let openai;
 try {
   const configuration = new Configuration({
@@ -53,103 +58,95 @@ try {
   process.exit(1);
 }
 
-// Routes
-app.get('/interventions', (req, res) => {
+// Serve static files from the public directory for /interventions path
+app.use('/interventions', express.static(path.join(__dirname, 'public')));
+
+// Handle root path and /interventions path
+app.get(['/', '/interventions'], (req, res) => {
+  console.log(`[DEBUG] Serving index.html for path: ${req.path}`);
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// API endpoint to process chat messages
-app.post('/interventions/api/chat', async (req, res) => {
-  try {
-    const { messages, userSchoolLevel, resourceType } = req.body;
+// Handle all API routes
+app.use('/api', (req, res, next) => {
+  console.log('[DEBUG] API request received:', req.path);
+  next();
+});
 
+// API endpoint to process chat messages
+app.post(['/api/chat', '/interventions/api/chat'], async (req, res) => {
+  console.log('[DEBUG] Processing chat message');
+  try {
+    const { messages, resourceType, schoolLevel = 'K-12' } = req.body;
+    
     if (!messages || !Array.isArray(messages)) {
-      return res.status(400).json({ error: 'Invalid messages format' });
+      throw new Error('Invalid messages format');
     }
 
-    // Filter out any messages with null or empty content
-    const validMessages = messages.filter(msg => 
-      msg && 
-      typeof msg.text === 'string' && 
-      msg.text.trim().length > 0
-    );
-
-    // Prepare context based on resource type
-    let systemPrompt = getSystemPrompt(resourceType, userSchoolLevel);
-
-    // Format messages for OpenAI
+    // Filter out messages with null content
+    const validMessages = messages.filter(msg => msg && msg.content);
+    
     const formattedMessages = [
-      { role: 'system', content: systemPrompt },
-      ...validMessages.map(msg => ({
-        role: msg.sender === 'user' ? 'user' : 'assistant',
-        content: msg.text.trim()
-      }))
+      { role: "system", content: getSystemPrompt(resourceType, schoolLevel) },
+      ...validMessages
     ];
 
-    // Call OpenAI API
     const completion = await openai.createChatCompletion({
-      model: "gpt-4",
+      model: "gpt-4-turbo-preview",
       messages: formattedMessages,
       temperature: 0.7,
-      max_tokens: 800,
+      max_tokens: 1000,
     });
 
-    if (!completion.data || !completion.data.choices || !completion.data.choices[0]) {
-      throw new Error('Invalid response from OpenAI API');
-    }
-
-    // Extract response and suggested buttons if any
-    const responseText = completion.data.choices[0].message.content;
-    const suggestedButtons = extractSuggestedButtons(responseText, resourceType);
-
+    const aiResponse = completion.data.choices[0].message.content;
+    console.log('[DEBUG] AI Response:', aiResponse);
+    
+    // Extract suggested buttons if any
+    const suggestedButtons = extractSuggestedButtons(aiResponse, resourceType);
+    
     res.json({
-      text: responseText.replace(/\[BUTTONS:.*\]/s, '').trim(),
+      message: aiResponse,
       suggestedButtons: suggestedButtons
     });
   } catch (error) {
-    console.error('Error in /api/chat:', error.response?.data || error.message || error);
-    
-    // Send appropriate error message based on the type of error
-    if (error.response?.status === 401) {
-      res.status(500).json({ error: 'Authentication error with AI service. Please check API key configuration.' });
-    } else if (error.response?.status === 429) {
-      res.status(429).json({ error: 'Too many requests. Please try again in a moment.' });
-    } else {
-      res.status(500).json({ 
-        error: 'An error occurred while processing your request.',
-        details: error.message
-      });
-    }
+    console.error('[ERROR] Chat processing error:', error);
+    res.status(500).json({ 
+      error: 'Failed to process chat message',
+      details: error.message 
+    });
   }
 });
 
-// API endpoint to generate intervention resource
-app.post('/interventions/api/generate-resource', async (req, res) => {
+// API endpoint to generate resources
+app.post(['/api/generate-resource', '/interventions/api/generate-resource'], async (req, res) => {
+  console.log('[DEBUG] Generating resource');
   try {
-    const { resourceType, conversationHistory, userSchoolLevel } = req.body;
+    const { messages, resourceType, schoolLevel = 'K-12' } = req.body;
+    
+    if (!messages || !Array.isArray(messages)) {
+      throw new Error('Invalid messages format');
+    }
 
-    // Create specific prompt for generating the resource
-    const resourcePrompt = createResourceGenerationPrompt(resourceType, conversationHistory, userSchoolLevel);
-
-    // Call OpenAI API
+    // Generate resource content using conversation history
+    const resourcePrompt = createResourceGenerationPrompt(messages, resourceType, schoolLevel);
+    
     const completion = await openai.createChatCompletion({
-      model: "gpt-4",
-      messages: [
-        { role: 'system', content: resourcePrompt },
-        { role: 'user', content: 'Generate a detailed, evidence-based resource incorporating our discussion points.' }
-      ],
+      model: "gpt-4-turbo-preview",
+      messages: [{ role: "user", content: resourcePrompt }],
       temperature: 0.7,
       max_tokens: 2000,
     });
 
-    const generatedResource = completion.data.choices[0].message.content;
-
-    res.json({
-      resource: generatedResource
-    });
+    const resourceContent = completion.data.choices[0].message.content;
+    console.log('[DEBUG] Resource generated successfully');
+    
+    res.json({ content: resourceContent });
   } catch (error) {
-    console.error('Error:', error);
-    res.status(500).json({ error: 'An error occurred while generating the resource.' });
+    console.error('[ERROR] Resource generation error:', error);
+    res.status(500).json({ 
+      error: 'Failed to generate resource',
+      details: error.message 
+    });
   }
 });
 
@@ -221,7 +218,7 @@ app.post('/interventions/api/generate-resource-section', async (req, res) => {
 });
 
 // Helper Functions
-function getSystemPrompt(resourceType, schoolLevel) {
+function getSystemPrompt(resourceType, schoolLevel = 'K-12') {
   let basePrompt = `You are an expert MTSS assistant helping educators create evidence-based resources. The user works at a ${schoolLevel} school. Respond in a professional but conversational tone. After questions, suggest 2-4 button options the user might want to click that move the conversation forward and are actionable, in format [BUTTONS: option1 | option2 | ...].
 
 When suggesting interventions, consider these domains:
@@ -277,10 +274,7 @@ function extractSuggestedButtons(text, resourceType) {
   }
 }
 
-function createResourceGenerationPrompt(resourceType, conversationHistory, schoolLevel) {
-  const userMessages = conversationHistory.filter(msg => msg.sender === 'user').map(msg => msg.text);
-  const assistantMessages = conversationHistory.filter(msg => msg.sender === 'assistant').map(msg => msg.text);
-
+function createResourceGenerationPrompt(messages, resourceType, schoolLevel = 'K-12') {
   let prompt = `You are an expert MTSS specialist creating a professional ${resourceType} for a ${schoolLevel} school. Use evidence-based practices from these sources:
 - What Works Clearinghouse
 - Evidence for ESSA
@@ -326,7 +320,7 @@ Format with clear sections and practical examples.`;
   }
 
   // Add conversation context
-  prompt += `\n\nBased on our conversation:\n${userMessages.join('\n')}`;
+  prompt += `\n\nBased on our conversation:\n${messages.join('\n')}`;
 
   return prompt;
 }
