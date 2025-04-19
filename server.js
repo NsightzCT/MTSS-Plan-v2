@@ -15,7 +15,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Configure Express to trust proxy headers for Vercel deployment
-// This MUST be set before any other middleware
+app.set('trust proxy', true);
 app.enable('trust proxy');
 
 // Middleware
@@ -25,6 +25,7 @@ app.use(bodyParser.json());
 // Add debug logging middleware
 app.use((req, res, next) => {
   console.log(`[DEBUG] Incoming request: ${req.method} ${req.path}`);
+  console.log('[DEBUG] Headers:', req.headers);
   next();
 });
 
@@ -37,7 +38,10 @@ const limiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  trustProxy: true // Explicitly trust the proxy
+  skip: (req) => {
+    // Skip rate limiting if we can't determine the IP
+    return !req.ip;
+  }
 });
 
 // Apply rate limiting to all routes
