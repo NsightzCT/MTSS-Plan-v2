@@ -151,6 +151,73 @@ app.post('/api/generate-resource', async (req, res) => {
   }
 });
 
+// Helper function to generate resource sections
+async function generateResourceSection(type, section, context, schoolLevel) {
+  const sectionPrompts = {
+    interventionMenu: {
+      overview: `Create a brief introduction and overview section for a ${schoolLevel} school intervention menu. Include purpose and how to use the menu. Format in markdown.`,
+      tier1: `Create the Tier 1 (Universal) section of the intervention menu. Include 2-3 key interventions with implementation steps and outcomes. Focus on universal supports.`,
+      tier2: `Create the Tier 2 (Targeted) section of the intervention menu. Include 2-3 key interventions with implementation steps and outcomes. Focus on small group interventions.`,
+      tier3: `Create the Tier 3 (Intensive) section of the intervention menu. Include 2-3 key interventions with implementation steps and outcomes. Focus on individual interventions.`
+    },
+    studentPlan: {
+      info: `Create the student information and areas of concern sections for a student intervention plan. Use placeholder student info and focus on clear documentation of concerns.`,
+      goals: `Create the goals and intervention selection section. Include 2-3 SMART goals and selected evidence-based interventions that align with the concerns discussed.`,
+      implementation: `Create the implementation timeline, staff responsibilities, and progress monitoring sections. Include specific schedules and clear staff roles.`
+    },
+    progressMonitoring: {
+      framework: `Create the overview and data collection framework sections. Include essential data points and collection schedules.`,
+      roles: `Create the staff roles, responsibilities, and decision rules sections. Include clear guidelines for using the data.`,
+      forms: `Create sample data collection forms and progress monitoring templates. Include practical examples.`
+    }
+  };
+
+  const prompt = `You are an expert MTSS specialist creating part of a ${type} for a ${schoolLevel} school. Use evidence-based practices from reputable sources.
+${sectionPrompts[type][section]}
+
+Context from conversation:
+${context}`;
+
+  const completion = await openai.createChatCompletion({
+    model: "gpt-4",
+    messages: [
+      { role: 'system', content: prompt },
+      { role: 'user', content: 'Generate this section of the resource.' }
+    ],
+    temperature: 0.7,
+    max_tokens: 1000,
+  });
+
+  return completion.data.choices[0].message.content;
+}
+
+// API endpoint to generate resource sections
+app.post('/api/generate-resource-section', async (req, res) => {
+  try {
+    const { resourceType, section, conversationHistory, userSchoolLevel } = req.body;
+    
+    // Get relevant context from conversation
+    const context = conversationHistory
+      .filter(msg => msg.sender === 'user')
+      .map(msg => msg.text)
+      .join('\n');
+
+    const sectionContent = await generateResourceSection(
+      resourceType,
+      section,
+      context,
+      userSchoolLevel
+    );
+
+    res.json({
+      section: sectionContent
+    });
+  } catch (error) {
+    console.error('Error:', error);
+    res.status(500).json({ error: 'An error occurred while generating the resource section.' });
+  }
+});
+
 // Helper Functions
 function getSystemPrompt(resourceType, schoolLevel) {
   let basePrompt = `You are an expert MTSS assistant helping educators create evidence-based resources. The user works at a ${schoolLevel} school. Respond in a professional but conversational tone. After questions, suggest 2-4 button options the user might want to click that move the conversation forward and are actionable, in format [BUTTONS: option1 | option2 | ...].

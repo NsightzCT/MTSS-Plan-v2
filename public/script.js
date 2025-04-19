@@ -33,6 +33,44 @@ let markdownConverter = new showdown.Converter({
   strikethrough: true
 });
 
+// Add CSS for resource message
+const style = document.createElement('style');
+style.textContent = `
+  .resource-message .message-content {
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 20px;
+    margin: 10px 0;
+  }
+  .resource-message .resource-content {
+    margin: 15px 0;
+    line-height: 1.6;
+  }
+  .resource-message .copy-button:hover {
+    background-color: #2a8995 !important;
+  }
+  .resource-message table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 15px 0;
+  }
+  .resource-message th {
+    background-color: #3da0ad;
+    color: white;
+    padding: 8px;
+    text-align: left;
+  }
+  .resource-message td {
+    border: 1px solid #ddd;
+    padding: 8px;
+  }
+  .resource-message tr:nth-child(even) {
+    background-color: #f2f2f2;
+  }
+`;
+document.head.appendChild(style);
+
 // Main Functions
 async function sendMessage(message, retryCount = 0) {
   try {
@@ -138,11 +176,6 @@ async function generateResource() {
 
   const loadingContent = loadingModal.querySelector('.loading-content');
   if (loadingContent) {
-    const spinner = loadingContent.querySelector('.spinner');
-    if (spinner) {
-      spinner.style.borderTopColor = '#3da0ad';
-    }
-
     const loadingText = loadingContent.querySelector('p');
     if (loadingText) {
       loadingText.textContent = 'Generating your resource...';
@@ -153,20 +186,14 @@ async function generateResource() {
 
   try {
     // Create resource based on type
-    let resourceTemplate = '';
     let resourceTitle = '';
-
     if (currentResourceType === 'interventionMenu') {
-      resourceTemplate = await fetchNsightzTemplate('interventionMenu');
-      resourceTitle = 'Intervention Menu';
+      resourceTitle = 'MTSS Intervention Menu';
     } else if (currentResourceType === 'studentPlan') {
-      resourceTemplate = await fetchNsightzTemplate('studentPlan');
       resourceTitle = 'Student Intervention Plan';
     } else if (currentResourceType === 'progressMonitoring') {
-      resourceTemplate = await fetchNsightzTemplate('progressMonitoring');
       resourceTitle = 'Progress Monitoring Framework';
     } else {
-      resourceTemplate = '# Nsightz MTSS Resource\n\n[Resource content will be generated based on your conversation]';
       resourceTitle = 'MTSS Resource';
     }
 
@@ -176,88 +203,206 @@ async function generateResource() {
       setTimeout(() => reject(new Error('Resource generation timed out')), timeoutDuration)
     );
 
-    // Customize template with timeout
-    const customizedResource = await Promise.race([
-      customizeTemplate(resourceTemplate),
+    // Only use the last 5 messages to keep context minimal
+    const relevantHistory = conversationHistory
+      .slice(-5)
+      .map(msg => ({
+        text: msg.text.substring(0, 500), // Limit message length
+        sender: msg.sender
+      }));
+
+    // Send request to generate resource
+    const response = await Promise.race([
+      fetch('/api/generate-resource', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          resourceType: currentResourceType,
+          conversationHistory: relevantHistory,
+          userSchoolLevel: schoolLevelSelect.value
+        })
+      }),
       timeoutPromise
     ]);
 
-    // Convert markdown to HTML
-    const htmlContent = markdownConverter.makeHtml(customizedResource);
+    if (!response.ok) {
+      throw new Error('Failed to generate resource');
+    }
 
-    // Update resource content
-    resourceContent.innerHTML = htmlContent;
+    const data = await response.json();
+    if (!data.resource) {
+      throw new Error('No resource content received');
+    }
 
-    // Add Nsightz color theme to headings
-    const headings = resourceContent.querySelectorAll('h1, h2, h3, h4, h5, h6');
-    headings.forEach(heading => {
-      if (heading.tagName === 'H1') {
-        heading.style.color = '#3da0ad';
-        heading.style.borderBottom = '2px solid #3da0ad';
-        heading.style.paddingBottom = '10px';
-      } else if (heading.tagName === 'H2') {
-        heading.style.color = '#3da0ad';
-      } else {
-        heading.style.color = '#2a8995';
-      }
+    // Create a message container
+    const messageContainer = document.createElement('div');
+    messageContainer.className = 'message assistant-message resource-message';
+
+    // Create content container
+    const contentContainer = document.createElement('div');
+    contentContainer.className = 'message-content';
+
+    // Add title
+    const titleElement = document.createElement('h2');
+    titleElement.textContent = resourceTitle;
+    titleElement.style.color = '#3da0ad';
+    titleElement.style.marginBottom = '15px';
+    contentContainer.appendChild(titleElement);
+
+    // Add the resource content
+    const resourceElement = document.createElement('div');
+    resourceElement.innerHTML = markdownConverter.makeHtml(data.resource);
+    resourceElement.className = 'resource-content';
+    contentContainer.appendChild(resourceElement);
+
+    // Add copy button
+    const copyButton = document.createElement('button');
+    copyButton.innerHTML = '<i class="fas fa-copy"></i> Copy Resource';
+    copyButton.className = 'copy-button';
+    copyButton.style.backgroundColor = '#3da0ad';
+    copyButton.style.color = 'white';
+    copyButton.style.border = 'none';
+    copyButton.style.padding = '8px 16px';
+    copyButton.style.borderRadius = '4px';
+    copyButton.style.marginTop = '10px';
+    copyButton.style.cursor = 'pointer';
+
+    copyButton.addEventListener('click', () => {
+      const textToCopy = `${resourceTitle}\n\n${data.resource}`;
+      navigator.clipboard.writeText(textToCopy).then(() => {
+        copyButton.innerHTML = '<i class="fas fa-check"></i> Copied!';
+        copyButton.style.backgroundColor = '#4CAF50';
+        setTimeout(() => {
+          copyButton.innerHTML = '<i class="fas fa-copy"></i> Copy Resource';
+          copyButton.style.backgroundColor = '#3da0ad';
+        }, 2000);
+      });
     });
 
-    // Style tables in the resource content
-    const tables = resourceContent.querySelectorAll('table');
-    tables.forEach(table => {
-      table.style.borderCollapse = 'collapse';
-      table.style.width = '100%';
-      table.style.marginBottom = '20px';
+    contentContainer.appendChild(copyButton);
+    messageContainer.appendChild(contentContainer);
+    messagesContainer.appendChild(messageContainer);
 
-      const headers = table.querySelectorAll('th');
-      headers.forEach(header => {
-        header.style.backgroundColor = '#3da0ad';
-        header.style.color = 'white';
-        header.style.padding = '8px';
-        header.style.textAlign = 'left';
-      });
-
-      const cells = table.querySelectorAll('td');
-      cells.forEach(cell => {
-        cell.style.border = '1px solid #ddd';
-        cell.style.padding = '8px';
-      });
-
-      const rows = table.querySelectorAll('tr:nth-child(even)');
-      rows.forEach(row => {
-        row.style.backgroundColor = '#f2f2f2';
-      });
-    });
-
-    // Show resource preview
-    resourcePreviewContainer.style.display = 'flex';
-    document.querySelector('.chat-container').style.flex = '0';
-
-    // Add message to conversation
-    addMessage(`I've generated your Nsightz MTSS ${resourceTitle}! You can view it, download it as a PDF, or export it to Google Docs.`, 'assistant');
+    // Add success message
+    addMessage('I\'ve generated your resource above! Click the copy button to take the resource with you.', 'assistant');
 
     // Suggest next steps
     updateSuggestedButtons(['Make changes', 'Create another resource', 'Schedule Nsightz demo', 'Thank you']);
 
+    // Scroll to the new message
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
   } catch (error) {
     console.error('Error:', error);
     
-    // Determine error message based on error type
     let errorMessage = 'Sorry, there was an error generating your resource.';
     if (error.message === 'Resource generation timed out') {
-      errorMessage = 'Sorry, the resource generation is taking longer than expected. Please try again with a shorter conversation history or more focused requirements.';
+      errorMessage = 'Sorry, the resource generation is taking longer than expected. Please try again with shorter responses or fewer requirements.';
     } else if (error.message.includes('504')) {
-      errorMessage = 'The server took too long to respond. Please try again with a shorter conversation history or more focused requirements.';
+      errorMessage = 'The server took too long to respond. Please try again with shorter responses or fewer requirements.';
     }
     
     addMessage(errorMessage, 'assistant');
-    
-    // Suggest alternative actions
     updateSuggestedButtons(['Try again', 'Start over', 'Contact support']);
   } finally {
-    // Hide loading modal
     loadingModal.classList.remove('active');
   }
+}
+
+function getResourceSections(resourceType) {
+  switch(resourceType) {
+    case 'interventionMenu':
+      return [
+        { id: 'overview', name: 'Overview' },
+        { id: 'tier1', name: 'Tier 1 Interventions' },
+        { id: 'tier2', name: 'Tier 2 Interventions' },
+        { id: 'tier3', name: 'Tier 3 Interventions' }
+      ];
+    case 'studentPlan':
+      return [
+        { id: 'info', name: 'Student Information' },
+        { id: 'goals', name: 'Goals and Interventions' },
+        { id: 'implementation', name: 'Implementation Plan' }
+      ];
+    case 'progressMonitoring':
+      return [
+        { id: 'framework', name: 'Monitoring Framework' },
+        { id: 'roles', name: 'Roles and Decision Rules' },
+        { id: 'forms', name: 'Data Collection Forms' }
+      ];
+    default:
+      return [];
+  }
+}
+
+function getResourceTitle(resourceType) {
+  switch(resourceType) {
+    case 'interventionMenu':
+      return 'MTSS Intervention Menu';
+    case 'studentPlan':
+      return 'Student Intervention Plan';
+    case 'progressMonitoring':
+      return 'Progress Monitoring Framework';
+    default:
+      return 'MTSS Resource';
+  }
+}
+
+function updateLoadingStatus(message) {
+  const loadingContent = loadingModal.querySelector('.loading-content');
+  if (loadingContent) {
+    const loadingText = loadingContent.querySelector('p');
+    if (loadingText) {
+      loadingText.textContent = message;
+      loadingText.style.color = '#3da0ad';
+      loadingText.style.fontWeight = 'bold';
+    }
+  }
+}
+
+function styleResourceContent() {
+  // Add Nsightz color theme to headings
+  const headings = resourceContent.querySelectorAll('h1, h2, h3, h4, h5, h6');
+  headings.forEach(heading => {
+    if (heading.tagName === 'H1') {
+      heading.style.color = '#3da0ad';
+      heading.style.borderBottom = '2px solid #3da0ad';
+      heading.style.paddingBottom = '10px';
+    } else if (heading.tagName === 'H2') {
+      heading.style.color = '#3da0ad';
+    } else {
+      heading.style.color = '#2a8995';
+    }
+  });
+
+  // Style tables
+  const tables = resourceContent.querySelectorAll('table');
+  tables.forEach(table => {
+    table.style.borderCollapse = 'collapse';
+    table.style.width = '100%';
+    table.style.marginBottom = '20px';
+
+    const headers = table.querySelectorAll('th');
+    headers.forEach(header => {
+      header.style.backgroundColor = '#3da0ad';
+      header.style.color = 'white';
+      header.style.padding = '8px';
+      header.style.textAlign = 'left';
+    });
+
+    const cells = table.querySelectorAll('td');
+    cells.forEach(cell => {
+      cell.style.border = '1px solid #ddd';
+      cell.style.padding = '8px';
+    });
+
+    const rows = table.querySelectorAll('tr:nth-child(even)');
+    rows.forEach(row => {
+      row.style.backgroundColor = '#f2f2f2';
+    });
+  });
 }
 
 // Helper function to fetch Nsightz templates
