@@ -13,15 +13,15 @@
   "routes": [
     {
       "src": "/interventions/api/(.*)",
-      "dest": "/server.js"
-    },
-    {
-      "src": "/interventions/(.*)",
-      "dest": "/public/$1"
+      "dest": "server.js"
     },
     {
       "src": "/interventions",
-      "dest": "/public/index.html"
+      "dest": "public/index.html"
+    },
+    {
+      "src": "/interventions/(.*)",
+      "dest": "public/$1"
     }
   ],
   "cleanUrls": true,
