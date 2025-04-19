@@ -4,12 +4,26 @@
     {
       "src": "server.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "public/**",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
     {
-      "src": "/(.*)",
-      "dest": "server.js"
+      "src": "/interventions/api/(.*)",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/interventions/(.*)",
+      "dest": "/public/$1"
+    },
+    {
+      "src": "/interventions",
+      "dest": "/public/index.html"
     }
-  ]
+  ],
+  "cleanUrls": true,
+  "trailingSlash": false
 } 

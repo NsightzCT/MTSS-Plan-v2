@@ -3,8 +3,9 @@ let lastApiCallTime = 0;
 const MIN_API_CALL_INTERVAL = 1000; // Minimum 1 second between API calls
 
 // Add API endpoint configuration
-const API_ENDPOINT = '/api/chat';
-const RESOURCE_ENDPOINT = '/api/generate-resource';
+const BASE_PATH = '/interventions';
+const API_ENDPOINT = `${BASE_PATH}/api/chat`;
+const RESOURCE_ENDPOINT = `${BASE_PATH}/api/generate-resource`;
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000; // 1 second
 
@@ -203,14 +204,6 @@ async function generateResource() {
       setTimeout(() => reject(new Error('Resource generation timed out')), timeoutDuration)
     );
 
-    // Only use the last 5 messages to keep context minimal
-    const relevantHistory = conversationHistory
-      .slice(-5)
-      .map(msg => ({
-        text: msg.text.substring(0, 500), // Limit message length
-        sender: msg.sender
-      }));
-
     // Send request to generate resource
     const response = await Promise.race([
       fetch('/api/generate-resource', {
@@ -220,7 +213,7 @@ async function generateResource() {
         },
         body: JSON.stringify({
           resourceType: currentResourceType,
-          conversationHistory: relevantHistory,
+          conversationHistory: conversationHistory,
           userSchoolLevel: schoolLevelSelect.value
         })
       }),
