@@ -36,6 +36,9 @@ let markdownConverter = new showdown.Converter({
 // Main Functions
 async function sendMessage(message, retryCount = 0) {
   try {
+    // Add loading message
+    const loadingMessage = addMessage('Thinking...', 'assistant', true);
+
     const response = await fetch('/api/chat', {
       method: 'POST',
       headers: {
@@ -1027,57 +1030,59 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function setupEventListeners() {
   // Send message when send button is clicked
-  sendButton.addEventListener('click', sendMessage);
+  sendButton.addEventListener('click', async () => {
+    const message = userInput.value.trim();
+    if (message) {
+      // Add user message to UI
+      addMessage(message, 'user');
+      // Clear input field
+      userInput.value = '';
+      // Send message to server
+      await handleMessageSend(message);
+    }
+  });
 
   // Send message when Enter key is pressed (but allow Shift+Enter for new lines)
-  userInput.addEventListener('keydown', (e) => {
+  userInput.addEventListener('keydown', async (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendMessage();
+      const message = userInput.value.trim();
+      if (message) {
+        // Add user message to UI
+        addMessage(message, 'user');
+        // Clear input field
+        userInput.value = '';
+        // Send message to server
+        await handleMessageSend(message);
+      }
     }
   });
 
   // Update resource type when a suggested button is clicked
-  suggestedButtonsContainer.addEventListener('click', (e) => {
+  suggestedButtonsContainer.addEventListener('click', async (e) => {
     if (e.target.classList.contains('suggested-button')) {
       const buttonText = e.target.textContent;
 
       // Special handling for "Schedule Nsightz demo" button
       if (buttonText === 'Schedule Nsightz demo') {
-        // Open a demo scheduling page in a new tab
         window.open('https://mtss.nsightz.com/launch', '_blank');
-
         // Add a message to the conversation
         addMessage('I\'d like to schedule a demo of the Nsightz MTSS platform.', 'user');
-
-        // Show loading indicator
-        const loadingMessage = addMessage('Thinking...', 'assistant', true);
-
-        // Remove loading indicator after a short delay
-        setTimeout(() => {
-          messagesContainer.removeChild(loadingMessage);
-
-          // Add assistant response
-          addMessage('Great choice! I\'ve opened the Nsightz demo scheduling page in a new tab. A member of our team will walk you through how Nsightz can streamline your MTSS process with one-click progress monitoring, quick logging, and intervention fidelity tracking. Is there anything specific about the platform you\'d like to know more about?', 'assistant');
-
-          // Suggest follow-up questions
-          updateSuggestedButtons([
-            'One-click progress monitoring', 
-            'Quick logging', 
-            'Intervention fidelity tracking',
-            'No thanks, I\'m all set'
-          ]);
-        }, 1500);
-
-        return; // Don't continue with regular button processing
+        // Send message to server
+        await handleMessageSend('I\'d like to schedule a demo of the Nsightz MTSS platform.');
+        return;
       }
 
       // Normal button handling
-      userInput.value = buttonText;
-      sendMessage();
-
+      // Add user message to UI
+      addMessage(buttonText, 'user');
+      
       // Determine resource type based on button text
-      if (buttonText.toLowerCase().includes('intervention menu')) {
+      if (buttonText.toLowerCase().includes('intervention menu') || 
+          buttonText.toLowerCase().includes('academic interventions') ||
+          buttonText.toLowerCase().includes('behavioral interventions') ||
+          buttonText.toLowerCase().includes('social-emotional interventions') ||
+          buttonText.toLowerCase().includes('attendance interventions')) {
         currentResourceType = 'interventionMenu';
       } else if (buttonText.toLowerCase().includes('student') && buttonText.toLowerCase().includes('plan')) {
         currentResourceType = 'studentPlan';
@@ -1096,6 +1101,9 @@ function setupEventListeners() {
         e.target.style.color = '';
         e.target.style.borderColor = '';
       }, 300);
+
+      // Send message to server
+      await handleMessageSend(buttonText);
     }
   });
 
@@ -1217,4 +1225,116 @@ function setupEventListeners() {
   ctaClose.addEventListener('click', () => {
     ctaBanner.style.display = 'none';
   });
+}
+
+// Separate the message sending logic
+async function handleMessageSend(message, retryCount = 0) {
+  try {
+    // Add loading message
+    const loadingMessage = addMessage('Thinking...', 'assistant', true);
+
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messages: [...conversationHistory, { sender: 'user', text: message }],
+        userSchoolLevel: schoolLevelSelect.value,
+        resourceType: currentResourceType
+      })
+    });
+
+    if (!response.ok) {
+      if (response.status === 429) {
+        throw new Error('Please wait a moment before making another request. The system is processing your previous request.');
+      }
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    // Remove loading message
+    if (loadingMessage && loadingMessage.parentNode) {
+      messagesContainer.removeChild(loadingMessage);
+    }
+
+    // Add assistant response to UI
+    addMessage(data.text, 'assistant');
+
+    // Update suggested buttons
+    if (data.suggestedButtons && data.suggestedButtons.length > 0) {
+      updateSuggestedButtons(data.suggestedButtons);
+    }
+
+    // Show generate resource button if we've had enough exchanges
+    if (conversationHistory.length >= 6 && !document.getElementById('generate-resource-button')) {
+      const actionButtonsContainer = document.querySelector('.action-buttons-container');
+      if (actionButtonsContainer) {
+        const generateButton = document.createElement('button');
+        generateButton.id = 'generate-resource-button';
+        generateButton.innerHTML = '<i class="fas fa-file-alt"></i> Generate Resource';
+        generateButton.style.backgroundColor = '#EC913D';
+        generateButton.style.color = 'white';
+        generateButton.style.padding = '12px 20px';
+        generateButton.style.borderRadius = '30px';
+        generateButton.style.border = 'none';
+        generateButton.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.2)';
+        generateButton.style.display = 'inline-flex';
+        generateButton.style.alignItems = 'center';
+        generateButton.style.justifyContent = 'center';
+        generateButton.style.cursor = 'pointer';
+        generateButton.style.transition = 'background-color 0.3s ease';
+        generateButton.style.fontFamily = 'Poppins, sans-serif';
+        generateButton.style.fontSize = '0.9rem';
+        generateButton.style.fontWeight = '500';
+
+        generateButton.addEventListener('mouseenter', function() {
+          this.style.backgroundColor = '#D9802D';
+        });
+
+        generateButton.addEventListener('mouseleave', function() {
+          this.style.backgroundColor = '#EC913D';
+        });
+
+        generateButton.addEventListener('click', generateResource);
+        actionButtonsContainer.appendChild(generateButton);
+      }
+    }
+
+    // Scroll to bottom of messages
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+    // Show CTA banner after a few exchanges
+    if (conversationHistory.length >= 6 && ctaBanner.style.display === 'none') {
+      setTimeout(() => {
+        ctaBanner.style.display = 'flex';
+      }, 2000);
+    }
+  } catch (error) {
+    console.error(`API call error (attempt ${retryCount + 1}):`, error);
+    
+    // Remove loading message if it exists
+    const loadingMessage = messagesContainer.querySelector('.message.assistant-message .spinner');
+    if (loadingMessage) {
+      const messageElement = loadingMessage.closest('.message');
+      if (messageElement) {
+        messagesContainer.removeChild(messageElement);
+      }
+    }
+    
+    if (retryCount < 2) {
+      // Wait for 2 seconds before retrying
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      return handleMessageSend(message, retryCount + 1);
+    }
+    
+    // Add error message to the chat
+    addMessage('Sorry, there was an error processing your message. Please try again.', 'assistant');
+    throw error;
+  }
 }

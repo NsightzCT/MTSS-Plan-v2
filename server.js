@@ -65,15 +65,22 @@ app.post('/api/chat', async (req, res) => {
       return res.status(400).json({ error: 'Invalid messages format' });
     }
 
+    // Filter out any messages with null or empty content
+    const validMessages = messages.filter(msg => 
+      msg && 
+      typeof msg.text === 'string' && 
+      msg.text.trim().length > 0
+    );
+
     // Prepare context based on resource type
     let systemPrompt = getSystemPrompt(resourceType, userSchoolLevel);
 
     // Format messages for OpenAI
     const formattedMessages = [
       { role: 'system', content: systemPrompt },
-      ...messages.map(msg => ({
+      ...validMessages.map(msg => ({
         role: msg.sender === 'user' ? 'user' : 'assistant',
-        content: msg.text
+        content: msg.text.trim()
       }))
     ];
 
@@ -146,17 +153,22 @@ app.post('/api/generate-resource', async (req, res) => {
 
 // Helper Functions
 function getSystemPrompt(resourceType, schoolLevel) {
-  let basePrompt = `You are an expert MTSS (Multi-Tiered System of Supports) assistant helping educators create evidence-based resources. The user works at a ${schoolLevel} school. Respond in a professional but conversational tone. After questions, suggest 2-4 button options the user might want to click that move the conversation forward and are actionable, in format [BUTTONS: option1 | option2 | ...]. Use evidence-based practices from What Works Clearinghouse, Evidence for ESSA, Intervention Central, Harmony SEL, Florida Center for Reading Research, Everyday Speech MTSS Intervention Library, RethinkEd MTSS Suite, OSE Educational Partnership (NYSED MTSS-I Center), Berea Regional Training Center, and the National Center on Intensive Intervention.
+  let basePrompt = `You are an expert MTSS assistant helping educators create evidence-based resources. The user works at a ${schoolLevel} school. Respond in a professional but conversational tone. After questions, suggest 2-4 button options the user might want to click that move the conversation forward and are actionable, in format [BUTTONS: option1 | option2 | ...].
 
-You have access to a comprehensive database of evidence-based interventions. When suggesting interventions, consider the following categories:
-${JSON.stringify(interventionData.domains, null, 2)}
+When suggesting interventions, consider these domains:
+- Academic (Reading, Math, Writing)
+- Behavioral
+- Social-Emotional
+- Attendance
 
-And the following tiered structure:
-${JSON.stringify(interventionData.tiers, null, 2)}
+And these tiers:
+- Tier 1: Universal supports
+- Tier 2: Targeted interventions
+- Tier 3: Intensive interventions
 
-If you don't have enough information to create the resource, ask follow-up questions to gather more information. Once you have enough information, confirm with the user that they want to create the resource.
+If you need more information, ask follow-up questions. Once you have enough information, confirm with the user that they want to create the resource.
 
-At appropriate moments (not too early, not too frequently), suggest that for more simplified progress monitoring, Nsightz MTSS can help enhance intervention tracking and simplify data logging. When users express interest in Nsightz MTSS or ask for more information, direct them to visit https://mtss.nsightz.com/launch to learn more about features, pricing, and to schedule a demo.`;
+At appropriate moments, suggest that Nsightz MTSS can help enhance progress monitoring and intervention fidelity. When users express interest, direct them to https://mtss.nsightz.com/launch.`;
 
   // Add resource-specific instructions
   switch(resourceType) {
@@ -170,7 +182,7 @@ At appropriate moments (not too early, not too frequently), suggest that for mor
       basePrompt += `\n\nYou're helping create a progress monitoring framework. Ask about what data will be collected, how frequently, by whom, and how it will be used for decision-making. Include methods for tracking both individual students and intervention effectiveness at system level. If these are incomplete, ask follow-up questions to gather more information.`;
       break;
     default:
-      basePrompt += `\n\nIntroduce yourself and ask what type of MTSS resource they want to create: an intervention menu, an individual student plan, or a progress monitoring framework.`;
+      basePrompt += `\n\nIntroduce yourself and ask what type of MTSS resource they want to create.`;
   }
 
   return basePrompt;
@@ -200,9 +212,19 @@ function createResourceGenerationPrompt(resourceType, conversationHistory, schoo
   const userMessages = conversationHistory.filter(msg => msg.sender === 'user').map(msg => msg.text);
   const assistantMessages = conversationHistory.filter(msg => msg.sender === 'assistant').map(msg => msg.text);
 
-  let prompt = `You are an expert MTSS specialist creating a professional ${resourceType} for a ${schoolLevel} school. Based on the conversation history, generate a comprehensive and properly formatted resource. The resource should be in markdown format for easy conversion to PDF.
+  let prompt = `You are an expert MTSS specialist creating a professional ${resourceType} for a ${schoolLevel} school. Use evidence-based practices from these sources:
+- What Works Clearinghouse
+- Evidence for ESSA
+- Intervention Central
+- Harmony SEL
+- Florida Center for Reading Research
+- Everyday Speech MTSS Intervention Library
+- RethinkEd MTSS Suite
+- OSE Educational Partnership (NYSED MTSS-I Center)
+- Berea Regional Training Center
+- National Center on Intensive Intervention
 
-You have access to a comprehensive database of evidence-based interventions. Use this data to inform your resource generation:
+Here is a database of evidence-based interventions to inform your resource generation:
 ${JSON.stringify(interventionStrategies, null, 2)}
 
 When mentioning Nsightz MTSS platform or when users express interest, direct them to visit https://mtss.nsightz.com/launch to learn more about features, pricing, and to schedule a demo.`;
