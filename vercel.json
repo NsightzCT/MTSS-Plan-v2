@@ -19,12 +19,16 @@
       "handle": "filesystem"
     },
     {
-      "src": "/(.*\\.(js|css|png|jpg|svg))",
+      "src": "/interventions",
+      "dest": "/public/index.html"
+    },
+    {
+      "src": "/interventions/(.*)",
       "dest": "/public/$1"
     },
     {
       "src": "/(.*)",
-      "dest": "/public/index.html"
+      "dest": "/public/$1"
     }
   ],
   "cleanUrls": true,
