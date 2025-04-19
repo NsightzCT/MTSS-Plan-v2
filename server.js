@@ -129,12 +129,12 @@ app.post('/api/generate-resource', async (req, res) => {
     // Create specific prompt for generating the resource
     const resourcePrompt = createResourceGenerationPrompt(resourceType, conversationHistory, userSchoolLevel);
 
-    // Call OpenAI API for resource generation
+    // Call OpenAI API
     const completion = await openai.createChatCompletion({
       model: "gpt-4",
       messages: [
         { role: 'system', content: resourcePrompt },
-        { role: 'user', content: 'Generate the resource based on our conversation.' }
+        { role: 'user', content: 'Generate a detailed, evidence-based resource incorporating our discussion points.' }
       ],
       temperature: 0.7,
       max_tokens: 2000,
@@ -220,44 +220,44 @@ function createResourceGenerationPrompt(resourceType, conversationHistory, schoo
 - Florida Center for Reading Research
 - Everyday Speech MTSS Intervention Library
 - RethinkEd MTSS Suite
-- OSE Educational Partnership (NYSED MTSS-I Center)
-- Berea Regional Training Center
+- OSE Educational Partnership
 - National Center on Intensive Intervention
 
-Here is a database of evidence-based interventions to inform your resource generation:
-${JSON.stringify(interventionStrategies, null, 2)}
-
-When mentioning Nsightz MTSS platform or when users express interest, direct them to visit https://mtss.nsightz.com/launch to learn more about features, pricing, and to schedule a demo.`;
+Generate a comprehensive resource in markdown format that follows best practices and research-based strategies.`;
 
   switch(resourceType) {
     case 'interventionMenu':
-      prompt += `\n\nCreate a tiered intervention menu showing evidence-based interventions across Tier 1, 2, and 3. Include:
-- Brief descriptions of interventions
-- Implementation steps
-- Expected outcomes
-Format with clear headers and sections.`;
+      prompt += `\n\nCreate a tiered intervention menu that includes:
+- 2-3 key interventions per tier with strong evidence base
+- Clear implementation steps and required resources
+- Expected outcomes and progress indicators
+- Specific examples for academic, behavioral, and social-emotional domains
+Format with clear headers and sections by tier.`;
       break;
     case 'studentPlan':
-      prompt += `\n\nCreate a student intervention plan including:
-- Student information section
-- Areas of concern
-- Goals and objectives
-- Selected interventions
-- Timeline and responsible staff
-- Progress monitoring plan
-Format as a professional document.`;
+      prompt += `\n\nCreate a comprehensive student intervention plan including:
+- Student Information (use placeholder)
+- Specific Areas of Concern (based on data)
+- SMART Goals (2-3 targeted goals)
+- Selected Evidence-Based Interventions
+- Implementation Timeline (6-8 weeks)
+- Staff Responsibilities
+- Progress Monitoring Schedule
+Format as a professional, actionable document.`;
       break;
     case 'progressMonitoring':
-      prompt += `\n\nCreate a progress monitoring framework including:
-- Data collection methods
-- Frequency of monitoring
-- Staff responsibilities
-- Decision-making criteria
-Format with clear sections and examples.`;
+      prompt += `\n\nCreate a detailed progress monitoring framework including:
+- Essential Data Points to Track
+- Collection Schedule (daily/weekly/monthly)
+- Staff Roles and Responsibilities
+- Decision Rules for Adjusting Interventions
+- Sample Data Collection Forms
+Format with clear sections and practical examples.`;
       break;
   }
 
-  prompt += `\n\nConversation context:\n${userMessages.join('\n')}`;
+  // Add conversation context
+  prompt += `\n\nBased on our conversation:\n${userMessages.join('\n')}`;
 
   return prompt;
 }
