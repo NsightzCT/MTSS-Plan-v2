@@ -21,8 +21,8 @@ const limiter = rateLimit({
   message: {
     error: 'Too many requests from this IP, please try again later.'
   },
-  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 // Apply rate limiting to all routes
@@ -31,7 +31,9 @@ app.use(limiter);
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, 'public')));
+
+// Serve static files from the public directory
+app.use('/interventions', express.static(path.join(__dirname, 'public')));
 
 // Check for required environment variables
 if (!process.env.OPENAI_API_KEY) {
@@ -52,12 +54,12 @@ try {
 }
 
 // Routes
-app.get('/', (req, res) => {
+app.get('/interventions', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // API endpoint to process chat messages
-app.post('/api/chat', async (req, res) => {
+app.post('/interventions/api/chat', async (req, res) => {
   try {
     const { messages, userSchoolLevel, resourceType } = req.body;
 
@@ -122,7 +124,7 @@ app.post('/api/chat', async (req, res) => {
 });
 
 // API endpoint to generate intervention resource
-app.post('/api/generate-resource', async (req, res) => {
+app.post('/interventions/api/generate-resource', async (req, res) => {
   try {
     const { resourceType, conversationHistory, userSchoolLevel } = req.body;
 
@@ -192,7 +194,7 @@ ${context}`;
 }
 
 // API endpoint to generate resource sections
-app.post('/api/generate-resource-section', async (req, res) => {
+app.post('/interventions/api/generate-resource-section', async (req, res) => {
   try {
     const { resourceType, section, conversationHistory, userSchoolLevel } = req.body;
     
@@ -328,6 +330,11 @@ Format with clear sections and practical examples.`;
 
   return prompt;
 }
+
+// Catch-all route for the interventions path
+app.get('/interventions/*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
