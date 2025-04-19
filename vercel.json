@@ -12,11 +12,11 @@
   ],
   "routes": [
     {
-      "src": "/api/(.*)",
+      "src": "/interventions/api/(.*)",
       "dest": "server.js"
     },
     {
-      "src": "/interventions/api/(.*)",
+      "src": "/api/(.*)",
       "dest": "server.js"
     },
     {
@@ -29,17 +29,13 @@
     {
       "src": "/interventions/(.*)",
       "dest": "server.js"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "server.js"
     }
   ],
   "cleanUrls": true,
   "trailingSlash": false,
   "headers": [
     {
-      "source": "/(.*)",
+      "source": "/interventions/(.*)",
       "headers": [
         {
           "key": "Cache-Control",
