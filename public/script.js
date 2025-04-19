@@ -277,12 +277,17 @@ async function fetchNsightzTemplate(type) {
 // Helper function to customize template based on conversation
 async function customizeTemplate(template) {
   try {
-    // Prepare a more focused conversation history
-    const relevantHistory = conversationHistory.slice(-10); // Only use last 10 messages
+    // Only use the last 5 messages to keep context minimal
+    const relevantHistory = conversationHistory
+      .slice(-5)
+      .map(msg => ({
+        text: msg.text.substring(0, 500), // Limit message length
+        sender: msg.sender
+      }));
 
-    // Send request to generate resource with timeout
+    // Send request to generate resource with shorter timeout
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
 
     const response = await fetch(RESOURCE_ENDPOINT, {
       method: 'POST',
@@ -301,16 +306,21 @@ async function customizeTemplate(template) {
 
     if (!response.ok) {
       if (response.status === 504) {
-        throw new Error('Server timeout - The request took too long to process');
+        throw new Error('Server timeout - Please try with shorter responses or fewer requirements');
       }
       throw new Error('Failed to generate resource');
     }
 
     const data = await response.json();
+    
+    if (!data.resource) {
+      throw new Error('No resource content received');
+    }
+
     return data.resource;
   } catch (error) {
     if (error.name === 'AbortError') {
-      throw new Error('Resource generation timed out');
+      throw new Error('Resource generation timed out - Please try with shorter responses');
     }
     throw error;
   }

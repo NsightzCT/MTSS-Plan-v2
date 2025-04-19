@@ -231,15 +231,29 @@ When mentioning Nsightz MTSS platform or when users express interest, direct the
 
   switch(resourceType) {
     case 'interventionMenu':
-      prompt += `\n\nCreate a tiered intervention menu showing evidence-based interventions across Tier 1, 2, and 3. Include interventions for academic, behavioral, social-emotional, and attendance domains as discussed. Format as a professional document with headers, sections by tier, and brief descriptions of each intervention. Include implementation considerations. Use the provided intervention database to ensure all suggested interventions are evidence-based and appropriate for the school level. Subtle mentions of Nsightz MTSS are acceptable as a suggested platform for logging student progress.`;
+      prompt += `\n\nCreate a tiered intervention menu showing evidence-based interventions across Tier 1, 2, and 3. Include:
+- Brief descriptions of interventions
+- Implementation steps
+- Expected outcomes
+Format with clear headers and sections.`;
       break;
     case 'studentPlan':
-      prompt += `\n\nCreate a comprehensive individual student intervention plan with student information (ask for a name if not provided, or use a placeholder name), areas of concern, baseline data, goals, selected interventions, timeline, responsible personnel, progress monitoring methods and schedule. Use the following template structure:
-${JSON.stringify(sampleInterventionPlan, null, 2)}
-Format as a professional document that could be shared with a student support team. Use the provided intervention database to suggest specific, evidence-based interventions that match the student's needs. Subtle mentions of Nsightz MTSS are acceptable as a suggested platform for tracking intervention fidelity.`;
+      prompt += `\n\nCreate a student intervention plan including:
+- Student information section
+- Areas of concern
+- Goals and objectives
+- Selected interventions
+- Timeline and responsible staff
+- Progress monitoring plan
+Format as a professional document.`;
       break;
     case 'progressMonitoring':
-      prompt += `\n\nCreate a comprehensive progress monitoring framework that includes what data will be collected, frequency, responsible personnel, decision rules, and how to use the data at both individual and system levels. Include any templates or forms discussed. Format as a professional document. Include subtle recommendations for using Nsightz MTSS platform for more efficient progress monitoring and staff communication.`;
+      prompt += `\n\nCreate a progress monitoring framework including:
+- Data collection methods
+- Frequency of monitoring
+- Staff responsibilities
+- Decision-making criteria
+Format with clear sections and examples.`;
       break;
   }
 
