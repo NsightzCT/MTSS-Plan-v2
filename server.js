@@ -15,7 +15,18 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Configure Express to trust proxy headers for Vercel deployment
-app.set('trust proxy', 1);
+// This MUST be set before any other middleware
+app.enable('trust proxy');
+
+// Middleware
+app.use(cors());
+app.use(bodyParser.json());
+
+// Add debug logging middleware
+app.use((req, res, next) => {
+  console.log(`[DEBUG] Incoming request: ${req.method} ${req.path}`);
+  next();
+});
 
 // Rate limiting configuration
 const limiter = rateLimit({
@@ -30,16 +41,6 @@ const limiter = rateLimit({
 
 // Apply rate limiting to all routes
 app.use(limiter);
-
-// Middleware
-app.use(cors());
-app.use(bodyParser.json());
-
-// Add debug logging middleware at the top after other middleware
-app.use((req, res, next) => {
-  console.log(`[DEBUG] Incoming request: ${req.method} ${req.path}`);
-  next();
-});
 
 // Configure OpenAI
 if (!process.env.OPENAI_API_KEY) {
@@ -58,8 +59,8 @@ try {
   process.exit(1);
 }
 
-// Serve static files from the public directory for /interventions path
-app.use('/interventions', express.static(path.join(__dirname, 'public')));
+// Serve static files from the public directory
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Handle root path and /interventions path
 app.get(['/', '/interventions'], (req, res) => {
@@ -71,6 +72,11 @@ app.get(['/', '/interventions'], (req, res) => {
 app.use('/api', (req, res, next) => {
   console.log('[DEBUG] API request received:', req.path);
   next();
+});
+
+// Catch-all route for the interventions path to handle client-side routing
+app.get('/interventions/*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // API endpoint to process chat messages
@@ -324,11 +330,6 @@ Format with clear sections and practical examples.`;
 
   return prompt;
 }
-
-// Catch-all route for the interventions path
-app.get('/interventions/*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
