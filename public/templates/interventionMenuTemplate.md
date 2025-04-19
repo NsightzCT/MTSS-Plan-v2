@@ -1,8 +1,9 @@
-# MTSS Intervention Menu
+# <img src="nsightz-logo.png" alt="Nsightz Logo" style="width: 50px; vertical-align: middle;"> MTSS Intervention Menu
+
+**Generated:** [Date]
 
 ## School: [School Name]
 ## School Level: [Elementary/Middle/High]
-## Date Created: [Date]
 
 ---
 
@@ -130,7 +131,7 @@
 
 ---
 
-<div style="text-align: center; margin-top: 30px;">
-  <img src="nsightz-logo.png" alt="Nsightz Logo" style="width: 100px;">
-  <p style="font-size: 0.8rem; color: #666;">© 2025 Nsightz Inc. All Rights Reserved</p>
+<div style="text-align: center; border-top: 1px solid #eee; padding-top: 20px; margin-top: 30px;">
+<p style="font-size: 0.8rem; color: #666;">© 2025 Nsightz Inc. All Rights Reserved</p>
+<p style="font-size: 0.8rem; color: #666;">Want to streamline your MTSS process? Try Nsightz MTSS for one-click progress monitoring, quick logging, and intervention fidelity tracking.</p>
 </div>

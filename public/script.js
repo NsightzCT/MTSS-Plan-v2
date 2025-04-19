@@ -1,3 +1,13 @@
+// Add rate limiting variables at the top of the file
+let lastApiCallTime = 0;
+const MIN_API_CALL_INTERVAL = 1000; // Minimum 1 second between API calls
+
+// Add API endpoint configuration
+const API_ENDPOINT = '/api/chat';
+const RESOURCE_ENDPOINT = '/api/generate-resource';
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 1000; // 1 second
+
 // DOM Elements
 const messagesContainer = document.getElementById('messages');
 const userInput = document.getElementById('user-input');
@@ -41,6 +51,14 @@ async function sendMessage() {
   const loadingMessage = addMessage('Thinking...', 'assistant', true);
 
   try {
+    // Check rate limiting
+    const now = Date.now();
+    if (now - lastApiCallTime < MIN_API_CALL_INTERVAL) {
+      // Wait if needed
+      await new Promise(resolve => setTimeout(resolve, MIN_API_CALL_INTERVAL - (now - lastApiCallTime)));
+    }
+    lastApiCallTime = Date.now();
+
     // Determine resource type if not already set
     if (!currentResourceType) {
       if (message.toLowerCase().includes('intervention menu')) {
@@ -53,21 +71,59 @@ async function sendMessage() {
       }
     }
 
-    // Send message to server
-    const response = await fetch(API_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        messages: conversationHistory,
-        userSchoolLevel: schoolLevelSelect.value,
-        resourceType: currentResourceType
-      })
-    });
+    // Send message to server with retry logic
+    let retryCount = 0;
+    let response;
+    let lastError;
 
-    if (!response.ok) {
-      throw new Error('Failed to get response from server');
+    while (retryCount < MAX_RETRIES) {
+      try {
+        response = await fetch(API_ENDPOINT, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            messages: conversationHistory,
+            userSchoolLevel: schoolLevelSelect.value,
+            resourceType: currentResourceType
+          })
+        });
+
+        if (response.ok) {
+          break;
+        }
+
+        // Handle specific API errors
+        if (response.status === 429) {
+          throw new Error('Please wait a moment before making another request. The system is processing your previous request.');
+        }
+
+        // Log the error for debugging
+        console.error(`API call failed (attempt ${retryCount + 1}):`, {
+          status: response.status,
+          statusText: response.statusText
+        });
+
+        lastError = new Error(`Server responded with status: ${response.status}`);
+        retryCount++;
+        
+        if (retryCount < MAX_RETRIES) {
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * retryCount));
+        }
+      } catch (error) {
+        console.error(`API call error (attempt ${retryCount + 1}):`, error);
+        lastError = error;
+        retryCount++;
+        
+        if (retryCount < MAX_RETRIES) {
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * retryCount));
+        }
+      }
+    }
+
+    if (!response || !response.ok) {
+      throw lastError || new Error('Failed to get response from server after multiple attempts');
     }
 
     const data = await response.json();
@@ -84,7 +140,7 @@ async function sendMessage() {
     }
 
     // Show generate resource button if we've had enough exchanges
-    if (conversationHistory.length >= 3 && !document.getElementById('generate-resource-button')) {
+    if (conversationHistory.length >= 6 && !document.getElementById('generate-resource-button')) {
       const actionButtonsContainer = document.querySelector('.action-buttons-container');
       if (actionButtonsContainer) {
         const generateButton = document.createElement('button');
@@ -122,7 +178,7 @@ async function sendMessage() {
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
 
     // Show CTA banner after a few exchanges
-    if (conversationHistory.length >= 4 && ctaBanner.style.display === 'none') {
+    if (conversationHistory.length >= 6 && ctaBanner.style.display === 'none') {
       setTimeout(() => {
         ctaBanner.style.display = 'flex';
       }, 2000);
@@ -133,8 +189,17 @@ async function sendMessage() {
     // Remove loading message
     messagesContainer.removeChild(loadingMessage);
 
-    // Add error message
-    addMessage('Sorry, there was an error processing your request. Please try again.', 'assistant');
+    // Add error message with more details
+    let errorMessage = 'Sorry, there was an error processing your request. ';
+    if (error.message.includes('429')) {
+      errorMessage += 'Please wait a moment and try again.';
+    } else if (error.message.includes('Failed to get response')) {
+      errorMessage += 'The server is not responding. Please try again in a few moments.';
+    } else {
+      errorMessage += 'Please try again.';
+    }
+    
+    addMessage(errorMessage, 'assistant');
   }
 }
 
@@ -144,16 +209,14 @@ async function generateResource() {
 
   const loadingContent = loadingModal.querySelector('.loading-content');
   if (loadingContent) {
-    // Update loading spinner color to match Nsightz brand
     const spinner = loadingContent.querySelector('.spinner');
     if (spinner) {
       spinner.style.borderTopColor = '#3da0ad';
     }
 
-    // Update loading text
     const loadingText = loadingContent.querySelector('p');
     if (loadingText) {
-      loadingText.textContent = 'Generating your Nsightz MTSS resource...';
+      loadingText.textContent = 'Generating your resource...';
       loadingText.style.color = '#3da0ad';
       loadingText.style.fontWeight = 'bold';
     }
@@ -184,19 +247,8 @@ async function generateResource() {
     // Convert markdown to HTML
     const htmlContent = markdownConverter.makeHtml(customizedResource);
 
-    // Add custom Nsightz header before displaying content
-    const nsightzHeader = `
-      <div style="display: flex; align-items: center; padding: 15px; background-color: #3da0ad; color: white; border-radius: 4px; margin-bottom: 20px;">
-        <img src="./Nsightz Logo.png" alt="Nsightz Logo" style="width: 40px; height: 40px; margin-right: 15px;">
-        <div>
-          <h1 style="margin: 0; font-size: 24px;">Nsightz MTSS ${resourceTitle}</h1>
-          <p style="margin: 0; font-size: 14px;">Generated on ${new Date().toLocaleDateString()}</p>
-        </div>
-      </div>
-    `;
-
     // Update resource content
-    resourceContent.innerHTML = nsightzHeader + htmlContent;
+    resourceContent.innerHTML = htmlContent;
 
     // Add Nsightz color theme to headings
     const headings = resourceContent.querySelectorAll('h1, h2, h3, h4, h5, h6');
@@ -219,7 +271,6 @@ async function generateResource() {
       table.style.width = '100%';
       table.style.marginBottom = '20px';
 
-      // Add styles to table headers
       const headers = table.querySelectorAll('th');
       headers.forEach(header => {
         header.style.backgroundColor = '#3da0ad';
@@ -228,22 +279,17 @@ async function generateResource() {
         header.style.textAlign = 'left';
       });
 
-      // Add styles to table cells
       const cells = table.querySelectorAll('td');
       cells.forEach(cell => {
         cell.style.border = '1px solid #ddd';
         cell.style.padding = '8px';
       });
 
-      // Add zebra striping to table rows
       const rows = table.querySelectorAll('tr:nth-child(even)');
       rows.forEach(row => {
         row.style.backgroundColor = '#f2f2f2';
       });
     });
-
-    // Ensure Nsightz footer is present
-    addNsightzFooter();
 
     // Show resource preview
     resourcePreviewContainer.style.display = 'flex';
@@ -303,56 +349,6 @@ async function customizeTemplate(template) {
   const data = await response.json();
   return data.resource;
 }
-
-// Add Nsightz footer to generated resources
-function addNsightzFooter() {
-  const footer = document.createElement('div');
-  footer.className = 'nsightz-footer';
-  footer.innerHTML = `
-    <div class="nsightz-footer-content">
-      <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 15px;">
-        <img src="./Nsightz Logo.png" alt="Nsightz Logo" class="footer-logo" style="width: 60px; height: auto;">
-        <div style="margin-left: 15px;">
-          <h3 style="margin: 0; color: #3da0ad; font-size: 18px;">Nsightz MTSS</h3>
-          <p style="margin: 0; font-size: 12px; color: #666;">Simplified Progress Monitoring</p>
-        </div>
-      </div>
-      <div style="display: flex; justify-content: space-between; width: 100%; border-top: 1px solid #eee; padding-top: 15px;">
-        <div style="flex: 1;">
-          <p style="font-size: 0.7rem; color: #666; margin: 0;"><strong>Contact:</strong> hello@nsightz.com</p>
-          <p style="font-size: 0.7rem; color: #666; margin: 0;"><strong>Website:</strong> <a href="https://mtss.nsightz.com/launch" target="_blank" style="color: #3da0ad;">mtss.nsightz.com</a></p>
-        </div>
-        <div style="flex: 1; text-align: right;">
-          <p style="font-size: 0.7rem; color: #666; margin: 0;">© 2025 Nsightz Inc.</p>
-          <p style="font-size: 0.7rem; color: #666; margin: 0;">All Rights Reserved</p>
-        </div>
-      </div>
-      <div style="width: 100%; margin-top: 10px; padding: 8px; background-color: #f5f5f5; border-radius: 4px; text-align: center;">
-        <p style="font-size: 0.7rem; color: #3da0ad; margin: 0;">
-          <strong>For comprehensive progress monitoring, quick logging, and improved intervention fidelity tracking,<br>visit <a href="https://mtss.nsightz.com/launch" target="_blank" style="color: #3da0ad;">mtss.nsightz.com/launch</a> to request a free demo.</strong>
-        </p>
-      </div>
-    </div>
-  `;
-
-  footer.style.padding = '20px';
-  footer.style.marginTop = '40px';
-  footer.style.borderTop = '2px solid #3da0ad';
-  footer.style.backgroundColor = '#ffffff';
-
-  // Remove existing footer if present
-  const existingFooter = resourceContent.querySelector('.nsightz-footer');
-  if (existingFooter) {
-    existingFooter.remove();
-  }
-
-  // Add footer to resource content
-  resourceContent.appendChild(footer);
-}
-
-// Constants
-const API_ENDPOINT = '/api/chat';
-const RESOURCE_ENDPOINT = '/api/generate-resource';
 
 // Utility Functions
 function addMessage(text, sender, isLoading = false) {
@@ -430,8 +426,583 @@ function markdownToHTML(text) {
   return text;
 }
 
+function htmlToMarkdown(html) {
+  // Create a temporary div to parse HTML
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = html;
+
+  // First, process nested elements to prevent formatting conflicts
+  const processTextFormatting = (element) => {
+    // Process bold and italic text first
+    const boldElements = element.querySelectorAll('strong, b');
+    boldElements.forEach(el => {
+      el.outerHTML = '**' + el.textContent + '**';
+    });
+
+    const italicElements = element.querySelectorAll('em, i');
+    italicElements.forEach(el => {
+      el.outerHTML = '*' + el.textContent + '*';
+    });
+  };
+
+  // Process text formatting in all elements
+  processTextFormatting(tempDiv);
+
+  // Convert headings with proper spacing
+  const headings = tempDiv.querySelectorAll('h1, h2, h3, h4, h5, h6');
+  headings.forEach(heading => {
+    const level = parseInt(heading.tagName[1]);
+    const text = heading.textContent.trim();
+    heading.outerHTML = '\n' + '#'.repeat(level) + ' ' + text + '\n\n';
+  });
+
+  // Convert paragraphs with proper spacing
+  const paragraphs = tempDiv.querySelectorAll('p');
+  paragraphs.forEach(p => {
+    p.outerHTML = '\n' + p.textContent.trim() + '\n\n';
+  });
+
+  // Convert lists with proper indentation
+  const lists = tempDiv.querySelectorAll('ul, ol');
+  lists.forEach(list => {
+    const items = list.querySelectorAll('li');
+    let markdownList = '\n';
+    items.forEach(item => {
+      markdownList += '- ' + item.textContent.trim() + '\n';
+    });
+    list.outerHTML = markdownList + '\n';
+  });
+
+  // Convert tables with proper alignment
+  const tables = tempDiv.querySelectorAll('table');
+  tables.forEach(table => {
+    const rows = table.querySelectorAll('tr');
+    let markdownTable = '\n';
+    
+    // Process header row
+    const headerCells = rows[0]?.querySelectorAll('th, td');
+    if (headerCells?.length) {
+      markdownTable += '| ' + Array.from(headerCells).map(cell => cell.textContent.trim()).join(' | ') + ' |\n';
+      markdownTable += '|' + Array.from(headerCells).map(() => ' --- ').join('|') + '|\n';
+    }
+    
+    // Process data rows
+    Array.from(rows).slice(1).forEach(row => {
+      const cells = row.querySelectorAll('td');
+      markdownTable += '| ' + Array.from(cells).map(cell => cell.textContent.trim()).join(' | ') + ' |\n';
+    });
+    
+    table.outerHTML = markdownTable + '\n';
+  });
+
+  // Get the processed content and clean up extra whitespace
+  let markdown = tempDiv.textContent
+    .replace(/\n{3,}/g, '\n\n') // Replace multiple newlines with double newlines
+    .trim();
+
+  return markdown;
+}
+
+// Update the PDF generation function with proper implementation
+async function generatePDF(markdownContent) {
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  const pdfWidth = pdf.internal.pageSize.getWidth();
+  const pdfHeight = pdf.internal.pageSize.getHeight();
+  const margins = { top: 20, bottom: 20, left: 15, right: 15 };
+  let yOffset = margins.top;
+  let currentPage = 1;
+
+  // Set default font and size
+  pdf.setFont('helvetica');
+  pdf.setFontSize(11);
+  pdf.setTextColor(0, 0, 0);
+
+  // Add header to first page
+  addHeaderToPage(pdf, currentPage);
+
+  // Process markdown content
+  const sections = markdownContent.split('\n\n').filter(section => section.trim());
+  
+  for (let section of sections) {
+    if (!section.trim()) continue;
+
+    // Handle headers
+    if (section.startsWith('#')) {
+      const level = section.match(/^#+/)[0].length;
+      const text = section.replace(/^#+\s*/, '').trim();
+      
+      // Add spacing before headers
+      yOffset += 5;
+      
+      // Check if we need a new page
+      if (yOffset + 10 > pdfHeight - margins.bottom) {
+        pdf.addPage();
+        currentPage++;
+        addHeaderToPage(pdf, currentPage);
+        yOffset = margins.top;
+      }
+
+      // Set font size based on header level
+      switch(level) {
+        case 1:
+          pdf.setFontSize(16);
+          pdf.setFont('helvetica', 'bold');
+          break;
+        case 2:
+          pdf.setFontSize(14);
+          pdf.setFont('helvetica', 'bold');
+          break;
+        case 3:
+          pdf.setFontSize(12);
+          pdf.setFont('helvetica', 'bold');
+          break;
+        default:
+          pdf.setFontSize(11);
+          pdf.setFont('helvetica', 'bold');
+      }
+
+      // Add the header text
+      const lines = pdf.splitTextToSize(text, pdfWidth - margins.left - margins.right);
+      for (let i = 0; i < lines.length; i++) {
+        pdf.text(lines[i], margins.left, yOffset);
+        yOffset += 8;
+      }
+      
+      // Reset font
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'normal');
+      continue;
+    }
+
+    // Handle lists
+    if (section.trim().startsWith('- ')) {
+      const listItems = section.split('\n');
+      for (const item of listItems) {
+        if (!item.trim()) continue;
+        
+        // Check if we need a new page
+        if (yOffset + 7 > pdfHeight - margins.bottom) {
+          pdf.addPage();
+          currentPage++;
+          addHeaderToPage(pdf, currentPage);
+          yOffset = margins.top;
+        }
+
+        // Process bold text in list items
+        const parts = processBoldText(item.replace(/^-\s*/, '').trim());
+        let xOffset = margins.left + 5;
+        let lineContent = '';
+        const maxWidth = pdfWidth - margins.left - margins.right - 5;
+
+        // Add bullet point
+        pdf.text('•', margins.left, yOffset);
+
+        // Process each part and handle line wrapping
+        for (const part of parts) {
+          if (part.bold) {
+            pdf.setFont('helvetica', 'bold');
+          } else {
+            pdf.setFont('helvetica', 'normal');
+          }
+
+          const words = part.text.split(' ');
+          for (const word of words) {
+            const testContent = lineContent + (lineContent ? ' ' : '') + word;
+            const testWidth = pdf.getStringUnitWidth(testContent) * pdf.getFontSize() / pdf.internal.scaleFactor;
+
+            if (testWidth > maxWidth) {
+              // Write current line
+              pdf.text(lineContent, xOffset, yOffset);
+              yOffset += 7;
+              xOffset = margins.left + 10; // Indent wrapped lines
+              lineContent = word;
+
+              // Check if we need a new page
+              if (yOffset + 7 > pdfHeight - margins.bottom) {
+                pdf.addPage();
+                currentPage++;
+                addHeaderToPage(pdf, currentPage);
+                yOffset = margins.top;
+              }
+            } else {
+              lineContent = testContent;
+            }
+          }
+        }
+
+        // Write the last line if any
+        if (lineContent) {
+          pdf.text(lineContent, xOffset, yOffset);
+          yOffset += 7;
+        }
+
+        pdf.setFont('helvetica', 'normal');
+      }
+      continue;
+    }
+
+    // Handle tables
+    if (section.includes('|')) {
+      const rows = section.split('\n').filter(row => row.trim().startsWith('|'));
+      if (rows.length > 0) {
+        // Calculate table dimensions
+        const tableHeight = rows.length * 8 + 5;
+        
+        // Check if we need a new page
+        if (yOffset + tableHeight > pdfHeight - margins.bottom) {
+          pdf.addPage();
+          currentPage++;
+          addHeaderToPage(pdf, currentPage);
+          yOffset = margins.top;
+        }
+
+        // Process table
+        const columnWidths = [];
+        const tableData = rows.map(row => {
+          const cells = row.split('|').slice(1, -1).map(cell => cell.trim());
+          cells.forEach((cell, i) => {
+            columnWidths[i] = Math.max(columnWidths[i] || 0, pdf.getStringUnitWidth(cell) * 5);
+          });
+          return cells;
+        });
+
+        // Draw table
+        const availableWidth = pdfWidth - margins.left - margins.right;
+        const totalWidth = columnWidths.reduce((a, b) => a + b, 0);
+        const scaleFactor = availableWidth / totalWidth;
+
+        tableData.forEach((row, rowIndex) => {
+          if (rowIndex === 1 && row.join('').includes('---')) return; // Skip separator row
+          
+          let xOffset = margins.left;
+          
+          // Set header style for first row
+          if (rowIndex === 0) {
+            pdf.setFont('helvetica', 'bold');
+          }
+
+          row.forEach((cell, colIndex) => {
+            const cellWidth = columnWidths[colIndex] * scaleFactor;
+            const parts = processBoldText(cell);
+            let cellXOffset = xOffset;
+            let cellContent = '';
+            const maxCellWidth = cellWidth - 2; // Leave some padding
+
+            // Process each part of the cell text
+            for (const part of parts) {
+              if (part.bold) {
+                pdf.setFont('helvetica', 'bold');
+              } else {
+                pdf.setFont('helvetica', 'normal');
+              }
+
+              const words = part.text.split(' ');
+              for (const word of words) {
+                const testContent = cellContent + (cellContent ? ' ' : '') + word;
+                const testWidth = pdf.getStringUnitWidth(testContent) * pdf.getFontSize() / pdf.internal.scaleFactor;
+
+                if (testWidth > maxCellWidth) {
+                  // Write current line
+                  pdf.text(cellContent, cellXOffset, yOffset);
+                  yOffset += 7;
+                  cellContent = word;
+
+                  // Check if we need a new page
+                  if (yOffset + 7 > pdfHeight - margins.bottom) {
+                    pdf.addPage();
+                    currentPage++;
+                    addHeaderToPage(pdf, currentPage);
+                    yOffset = margins.top;
+                  }
+                } else {
+                  cellContent = testContent;
+                }
+              }
+            }
+
+            // Write the last line if any
+            if (cellContent) {
+              pdf.text(cellContent, cellXOffset, yOffset);
+            }
+
+            xOffset += cellWidth;
+          });
+
+          yOffset += 8;
+          pdf.setFont('helvetica', 'normal');
+        });
+
+        yOffset += 5;
+      }
+      continue;
+    }
+
+    // Handle regular paragraphs with bold text
+    const parts = processBoldText(section);
+    let currentLine = '';
+    let lineHeight = 7;
+    const maxWidth = pdfWidth - margins.left - margins.right;
+
+    // Check if we need a new page
+    if (yOffset + lineHeight > pdfHeight - margins.bottom) {
+      pdf.addPage();
+      currentPage++;
+      addHeaderToPage(pdf, currentPage);
+      yOffset = margins.top;
+    }
+
+    // Process each part of the text
+    for (const part of parts) {
+      if (part.bold) {
+        pdf.setFont('helvetica', 'bold');
+      } else {
+        pdf.setFont('helvetica', 'normal');
+      }
+
+      const words = part.text.split(' ');
+      for (const word of words) {
+        const testLine = currentLine + (currentLine ? ' ' : '') + word;
+        const testWidth = pdf.getStringUnitWidth(testLine) * pdf.getFontSize() / pdf.internal.scaleFactor;
+
+        if (testWidth > maxWidth) {
+          // Write current line
+          pdf.text(currentLine, margins.left, yOffset);
+          yOffset += lineHeight;
+          currentLine = word;
+
+          // Check if we need a new page
+          if (yOffset + lineHeight > pdfHeight - margins.bottom) {
+            pdf.addPage();
+            currentPage++;
+            addHeaderToPage(pdf, currentPage);
+            yOffset = margins.top;
+          }
+        } else {
+          currentLine = testLine;
+        }
+      }
+    }
+
+    // Write the last line if any
+    if (currentLine) {
+      pdf.text(currentLine, margins.left, yOffset);
+      yOffset += lineHeight + 3;
+    }
+  }
+
+  // Add footer to each page
+  for (let page = 1; page <= currentPage; page++) {
+    pdf.setPage(page);
+    addFooterToPage(pdf);
+  }
+
+  return pdf;
+}
+
+// Helper function to process bold text
+function processBoldText(text) {
+  const parts = [];
+  let currentIndex = 0;
+  let boldMatch;
+  const boldRegex = /\*\*(.*?)\*\*/g;
+
+  while ((boldMatch = boldRegex.exec(text)) !== null) {
+    // Add text before the bold part
+    if (boldMatch.index > currentIndex) {
+      parts.push({
+        text: text.substring(currentIndex, boldMatch.index),
+        bold: false
+      });
+    }
+
+    // Add the bold text with proper spacing
+    const boldText = boldMatch[1];
+    parts.push({
+      text: boldText + (text[boldMatch.index + boldMatch[0].length] === ':' ? ':' : ''),
+      bold: true
+    });
+
+    currentIndex = boldMatch.index + boldMatch[0].length + (text[boldMatch.index + boldMatch[0].length] === ':' ? 1 : 0);
+  }
+
+  // Add any remaining text
+  if (currentIndex < text.length) {
+    parts.push({
+      text: text.substring(currentIndex),
+      bold: false
+    });
+  }
+
+  // If no bold text was found, return the entire text as a single non-bold part
+  if (parts.length === 0) {
+    parts.push({
+      text: text,
+      bold: false
+    });
+  }
+
+  return parts;
+}
+
+function addHeaderToPage(pdf, pageNumber) {
+  const pdfWidth = pdf.internal.pageSize.getWidth();
+  
+  // Add title background
+  pdf.setFillColor(61, 160, 173); // #3da0ad
+  pdf.rect(0, 0, pdfWidth, 15, 'F');
+  
+  // Set header text style
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(255, 255, 255); // White text for header
+  pdf.setFontSize(12);
+
+  // Set title based on resource type
+  let title = 'Nsightz MTSS Resource';
+  if (currentResourceType === 'interventionMenu') {
+    title = 'Nsightz MTSS Intervention Menu';
+  } else if (currentResourceType === 'studentPlan') {
+    title = 'Nsightz MTSS Student Intervention Plan';
+  } else if (currentResourceType === 'progressMonitoring') {
+    title = 'Nsightz MTSS Progress Monitoring Framework';
+  }
+
+  // Add title and page number
+  pdf.text(title + ' - Page ' + pageNumber, 10, 10);
+  
+  // Add generation date
+  const today = new Date();
+  const dateString = today.toLocaleDateString('en-US', { 
+    year: 'numeric', 
+    month: 'long', 
+    day: 'numeric' 
+  });
+  pdf.text('Generated on: ' + dateString, pdfWidth - 10, 10, { align: 'right' });
+  
+  // Reset text style for content
+  pdf.setTextColor(0, 0, 0);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(11);
+}
+
+function addFooterToPage(pdf) {
+  const pdfWidth = pdf.internal.pageSize.getWidth();
+  const pdfHeight = pdf.internal.pageSize.getHeight();
+  
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(8);
+  pdf.setTextColor(0, 0, 0);
+  
+  // Add copyright
+  pdf.text('© 2025 Nsightz Inc. All Rights Reserved', pdfWidth/2, pdfHeight - 10, {
+    align: 'center'
+  });
+  
+  // Add promotional text
+  pdf.text('For one-click progress monitoring, visit mtss.nsightz.com/launch', pdfWidth/2, pdfHeight - 6, {
+    align: 'center'
+  });
+}
+
+// Helper function to get resource filename
+function getResourceFilename(extension = 'pdf') {
+  let filename = `Nsightz_MTSS_Resource.${extension}`;
+  if (currentResourceType === 'interventionMenu') {
+    filename = `Nsightz_Intervention_Menu.${extension}`;
+  } else if (currentResourceType === 'studentPlan') {
+    filename = `Nsightz_Student_Intervention_Plan.${extension}`;
+  } else if (currentResourceType === 'progressMonitoring') {
+    filename = `Nsightz_Progress_Monitoring_Framework.${extension}`;
+  }
+  return filename;
+}
+
+// Helper function to create styled HTML from markdown
+function createStyledHTML(markdownContent) {
+  const styledHTML = `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    line-height: 1.6;
+    margin: 40px;
+    max-width: 800px;
+    margin: 40px auto;
+  }
+  h1 {
+    color: #3da0ad;
+    border-bottom: 2px solid #3da0ad;
+    padding-bottom: 10px;
+  }
+  h2 {
+    color: #3da0ad;
+    margin-top: 25px;
+  }
+  h3, h4, h5, h6 {
+    color: #2a8995;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 20px 0;
+  }
+  th {
+    background-color: #3da0ad;
+    color: white;
+    padding: 8px;
+    text-align: left;
+  }
+  td {
+    border: 1px solid #ddd;
+    padding: 8px;
+  }
+  tr:nth-child(even) {
+    background-color: #f2f2f2;
+  }
+  ul {
+    margin-bottom: 1rem;
+    padding-left: 1.5rem;
+  }
+  li {
+    margin-bottom: 0.5rem;
+  }
+  .footer {
+    margin-top: 40px;
+    padding-top: 20px;
+    border-top: 1px solid #eee;
+    text-align: center;
+    color: #666;
+    font-size: 0.8rem;
+  }
+</style>
+</head>
+<body>
+${markdownConverter.makeHtml(markdownContent)}
+<div class="footer">
+  <p>© 2025 Nsightz Inc. All Rights Reserved</p>
+  <p>For one-click progress monitoring, visit mtss.nsightz.com/launch</p>
+</div>
+</body>
+</html>`;
+
+  return styledHTML;
+}
+
 // Initialize the chat with a welcome message
-window.addEventListener('DOMContentLoaded', () => {
+console.log('Script loaded'); // Debug log
+
+document.addEventListener('DOMContentLoaded', () => {
+  console.log('DOM Content Loaded'); // Debug log
+
+  // Verify DOM elements exist
+  if (!messagesContainer) {
+    console.error('Messages container not found!');
+    return;
+  }
+
   // Set Nsightz theme colors
   document.documentElement.style.setProperty('--primary-color', '#3da0ad');
   document.documentElement.style.setProperty('--primary-light', '#5fb9c6');
@@ -454,58 +1025,77 @@ window.addEventListener('DOMContentLoaded', () => {
     headerLogo.alt = 'Nsightz MTSS Assistant Logo';
   }
 
-  addMessage('Welcome to the Nsightz MTSS Assistant! I\'m here to help you create evidence-based resources for your Multi-Tiered System of Supports. What type of resource would you like to create today?', 'assistant');
+  try {
+    // Add initial welcome message
+    console.log('Adding welcome message...'); // Debug log
+    const welcomeMessage = 'Welcome to the Nsightz MTSS Assistant! I\'m here to help you create evidence-based resources for your MTSS program. What type of resource would you like to create today?';
+    addMessage(welcomeMessage, 'assistant');
 
-  // Add initial suggested buttons
-  updateSuggestedButtons(['Intervention Menu', 'Student Intervention Plan', 'Progress Monitoring Framework']);
+    // Add initial suggested buttons
+    console.log('Adding suggested buttons...'); // Debug log
+    updateSuggestedButtons(['Intervention Menu', 'Intervention Plan for a Student', 'Progress Monitoring Framework']);
 
-  // Set event listeners
-  setupEventListeners();
+    // Set up event listeners
+    console.log('Setting up event listeners...'); // Debug log
+    setupEventListeners();
 
-  // Show CTA banner after 20 seconds
-  setTimeout(() => {
-    ctaBanner.style.display = 'flex';
-  }, 20000);
-
-  // Style the CTA banner
-  if (ctaBanner) {
-    ctaBanner.style.backgroundColor = '#3da0ad';
-    ctaBanner.style.color = '#ffffff';
-    ctaBanner.style.borderRadius = '8px';
-    ctaBanner.style.margin = '0 10px 10px 10px';
-
-    // Add Nsightz logo to banner
-    const ctaContent = ctaBanner.querySelector('.cta-content');
-    if (ctaContent) {
-      const logoImg = document.createElement('img');
-      logoImg.src = './Nsightz Logo.png';
-      logoImg.alt = 'Nsightz Logo';
-      logoImg.style.width = '30px';
-      logoImg.style.marginRight = '10px';
-
-      // Add the logo as the first child of the content div
-      if (ctaContent.firstChild) {
-        ctaContent.insertBefore(logoImg, ctaContent.firstChild);
-      } else {
-        ctaContent.appendChild(logoImg);
+    // Show CTA banner after 15 seconds
+    setTimeout(() => {
+      if (ctaBanner) {
+        ctaBanner.style.display = 'flex';
       }
+    }, 15000);
 
-      // Update text
-      const ctaText = ctaContent.querySelector('p');
-      if (ctaText) {
-        ctaText.innerHTML = 'Want to streamline your MTSS process? Try <strong>Nsightz MTSS Platform</strong> for comprehensive progress monitoring, data visualization, and automated reporting.';
-      }
+    // Style the CTA banner
+    if (ctaBanner) {
+      ctaBanner.style.backgroundColor = '#3da0ad';
+      ctaBanner.style.color = '#ffffff';
+      ctaBanner.style.borderRadius = '8px';
+      ctaBanner.style.margin = '0 10px 10px 10px';
 
-      // Style the button
-      const button = ctaContent.querySelector('.cta-button');
-      if (button) {
-        button.style.backgroundColor = '#ffffff';
-        button.style.color = '#3da0ad';
-        button.style.fontWeight = 'bold';
-        button.style.border = 'none';
-        button.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.2)';
+      // Add Nsightz logo to banner
+      const ctaContent = ctaBanner.querySelector('.cta-content');
+      if (ctaContent) {
+        const logoImg = document.createElement('img');
+        logoImg.src = './Nsightz Logo.png';
+        logoImg.alt = 'Nsightz Logo';
+        logoImg.style.width = '30px';
+        logoImg.style.marginRight = '10px';
+
+        // Add the logo as the first child of the content div
+        if (ctaContent.firstChild) {
+          ctaContent.insertBefore(logoImg, ctaContent.firstChild);
+        } else {
+          ctaContent.appendChild(logoImg);
+        }
+
+        // Update text
+        const ctaText = ctaContent.querySelector('p');
+        if (ctaText) {
+          ctaText.innerHTML = 'Want to streamline your MTSS process? Try <strong>Nsightz MTSS</strong> for one-click progress monitoring, quick logging, and intervention fidelity tracking.';
+        }
+
+        // Style the button
+        const button = ctaContent.querySelector('.cta-button');
+        if (button) {
+          button.style.backgroundColor = '#ffffff';
+          button.style.color = '#3da0ad';
+          button.style.fontWeight = 'bold';
+          button.style.border = 'none';
+          button.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.2)';
+        }
       }
     }
+
+    // Update footer bar text
+    const footerBar = document.querySelector('.footer-bar');
+    if (footerBar) {
+      footerBar.innerHTML = 'Want to streamline your MTSS process? Try Nsightz MTSS for one-click progress monitoring, quick logging, and intervention fidelity tracking.';
+    }
+
+    console.log('Initialization complete!'); // Debug log
+  } catch (error) {
+    console.error('Error during initialization:', error);
   }
 });
 
@@ -542,13 +1132,13 @@ function setupEventListeners() {
           messagesContainer.removeChild(loadingMessage);
 
           // Add assistant response
-          addMessage('Great choice! I\'ve opened the Nsightz demo scheduling page in a new tab. A member of our team will walk you through how Nsightz can streamline your MTSS process with comprehensive progress monitoring, data visualization, and automated reporting. Is there anything specific about the platform you\'d like to know more about?', 'assistant');
+          addMessage('Great choice! I\'ve opened the Nsightz demo scheduling page in a new tab. A member of our team will walk you through how Nsightz can streamline your MTSS process with one-click progress monitoring, quick logging, and intervention fidelity tracking. Is there anything specific about the platform you\'d like to know more about?', 'assistant');
 
           // Suggest follow-up questions
           updateSuggestedButtons([
-            'Data visualization features', 
-            'Integration with SIS', 
-            'Implementation timeline',
+            'One-click progress monitoring', 
+            'Quick logging', 
+            'Intervention fidelity tracking',
             'No thanks, I\'m all set'
           ]);
         }, 1500);
@@ -584,56 +1174,26 @@ function setupEventListeners() {
   });
 
   // PDF download
-  downloadPdfButton.addEventListener('click', () => {
-    const { jsPDF } = window.jspdf;
-
+  downloadPdfButton.addEventListener('click', async () => {
     // Display loading modal
     loadingModal.classList.add('active');
 
-    // Add Nsightz footer if not already present
-    addNsightzFooter();
-
-    // Capture HTML content as canvas
-    html2canvas(resourceContent).then(canvas => {
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const imgProps = pdf.getImageProperties(imgData);
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-
-      // Add content to PDF
-      pdf.addImage(imgData, 'PNG', 0, 15, pdfWidth, pdfHeight); // Add some top margin for header
-
-      // Add header with title
-      pdf.setFillColor(61, 160, 173); // #3da0ad
-      pdf.rect(0, 0, pdfWidth, 15, 'F');
-
-      // Add title text
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(255, 255, 255);
-      pdf.setFontSize(12);
-
-      let title = 'Nsightz MTSS Resource';
-      if (currentResourceType === 'interventionMenu') {
-        title = 'Nsightz MTSS Intervention Menu';
-      } else if (currentResourceType === 'studentPlan') {
-        title = 'Nsightz MTSS Student Intervention Plan';
-      } else if (currentResourceType === 'progressMonitoring') {
-        title = 'Nsightz MTSS Progress Monitoring Framework';
+    try {
+      // Get the content element
+      const contentElement = document.querySelector('#resource-content');
+      if (!contentElement) {
+        throw new Error('Resource preview content not found. Please make sure you have generated a resource first.');
       }
 
-      pdf.text(title, 20, 8);
+      // Get the HTML content and convert to markdown
+      const htmlContent = contentElement.innerHTML;
+      console.log('Original HTML:', htmlContent); // Debug log
+      
+      const markdownContent = htmlToMarkdown(htmlContent);
+      console.log('Converted Markdown:', markdownContent); // Debug log
 
-      // Add footer with Nsightz branding
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(8);
-      pdf.setTextColor(100, 100, 100);
-      pdf.text('© 2025 Nsightz Inc. All Rights Reserved', pdfWidth/2, pdf.internal.pageSize.getHeight() - 10, {
-        align: 'center'
-      });
-      pdf.text('For comprehensive progress monitoring, visit mtss.nsightz.com/launch', pdfWidth/2, pdf.internal.pageSize.getHeight() - 6, {
-        align: 'center'
-      });
+      // Generate the PDF
+      const pdf = await generatePDF(markdownContent);
 
       // Generate filename based on resource type
       let filename = 'Nsightz_MTSS_Resource.pdf';
@@ -645,48 +1205,76 @@ function setupEventListeners() {
         filename = 'Nsightz_Progress_Monitoring_Framework.pdf';
       }
 
+      // Save the PDF
       pdf.save(filename);
-
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('There was an error generating the PDF: ' + error.message);
+    } finally {
       // Hide loading modal
       loadingModal.classList.remove('active');
-    }).catch(error => {
-      console.error('Error generating PDF:', error);
-      loadingModal.classList.remove('active');
-      alert('There was an error generating the PDF. Please try again.');
-    });
+    }
   });
 
   // Export to Google Docs
-  exportGoogleDocsButton.addEventListener('click', () => {
-    // Add Nsightz footer if not already present
-    addNsightzFooter();
+  exportGoogleDocsButton.addEventListener('click', async () => {
+    // Display loading modal
+    loadingModal.classList.add('active');
 
-    const htmlContent = resourceContent.innerHTML;
+    try {
+      // Get the content element
+      const contentElement = document.querySelector('#resource-content');
+      if (!contentElement) {
+        throw new Error('Resource preview content not found. Please make sure you have generated a resource first.');
+      }
 
-    // Create a Blob with the HTML content
-    const blob = new Blob([htmlContent], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
+      // Get the HTML content and convert to markdown
+      const htmlContent = contentElement.innerHTML;
+      const markdownContent = htmlToMarkdown(htmlContent);
+      
+      // Create styled HTML document
+      const styledHTML = createStyledHTML(markdownContent);
 
-    // Generate filename based on resource type
-    let filename = 'Nsightz_MTSS_Resource.html';
-    if (currentResourceType === 'interventionMenu') {
-      filename = 'Nsightz_Intervention_Menu.html';
-    } else if (currentResourceType === 'studentPlan') {
-      filename = 'Nsightz_Student_Intervention_Plan.html';
-    } else if (currentResourceType === 'progressMonitoring') {
-      filename = 'Nsightz_Progress_Monitoring_Framework.html';
+      // Create a Blob with the HTML content
+      const blob = new Blob([styledHTML], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+
+      // Generate filename
+      const filename = getResourceFilename('html');
+
+      // Create a temporary link to download the HTML file
+      const tempLink = document.createElement('a');
+      tempLink.href = url;
+      tempLink.download = filename;
+      document.body.appendChild(tempLink);
+      tempLink.click();
+      document.body.removeChild(tempLink);
+
+      // Clean up the URL object
+      URL.revokeObjectURL(url);
+
+      // Show instructions for importing to Google Docs
+      const instructions = 
+        'File downloaded successfully!\n\n' +
+        'To import to Google Docs:\n' +
+        '1. Go to drive.google.com\n' +
+        '2. Click "New" > "File upload"\n' +
+        '3. Select the downloaded HTML file\n' +
+        '4. Right-click the file > "Open with" > "Google Docs"\n\n' +
+        'The document will maintain all formatting, including:\n' +
+        '• Headers and styling\n' +
+        '• Tables and lists\n' +
+        '• Bold and italic text\n' +
+        '• Custom colors and spacing';
+
+      alert(instructions);
+    } catch (error) {
+      console.error('Error exporting to Google Docs:', error);
+      alert('There was an error exporting to Google Docs: ' + error.message);
+    } finally {
+      // Hide loading modal
+      loadingModal.classList.remove('active');
     }
-
-    // Create a temporary link to download the HTML file
-    const tempLink = document.createElement('a');
-    tempLink.href = url;
-    tempLink.download = filename;
-    document.body.appendChild(tempLink);
-    tempLink.click();
-    document.body.removeChild(tempLink);
-
-    // Show instructions for importing to Google Docs
-    alert('File downloaded. To import to Google Docs:\n1. Go to drive.google.com\n2. Click "New" > "File upload"\n3. Select the downloaded HTML file\n4. Right-click the file > "Open with" > "Google Docs"');
   });
 
   // Back to chat
