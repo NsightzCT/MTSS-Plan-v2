@@ -170,8 +170,17 @@ async function generateResource() {
       resourceTitle = 'MTSS Resource';
     }
 
-    // Customize template based on conversation
-    const customizedResource = await customizeTemplate(resourceTemplate);
+    // Set up timeout for resource generation
+    const timeoutDuration = 25000; // 25 seconds
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Resource generation timed out')), timeoutDuration)
+    );
+
+    // Customize template with timeout
+    const customizedResource = await Promise.race([
+      customizeTemplate(resourceTemplate),
+      timeoutPromise
+    ]);
 
     // Convert markdown to HTML
     const htmlContent = markdownConverter.makeHtml(customizedResource);
@@ -232,7 +241,19 @@ async function generateResource() {
 
   } catch (error) {
     console.error('Error:', error);
-    addMessage('Sorry, there was an error generating your resource. Please try again.', 'assistant');
+    
+    // Determine error message based on error type
+    let errorMessage = 'Sorry, there was an error generating your resource.';
+    if (error.message === 'Resource generation timed out') {
+      errorMessage = 'Sorry, the resource generation is taking longer than expected. Please try again with a shorter conversation history or more focused requirements.';
+    } else if (error.message.includes('504')) {
+      errorMessage = 'The server took too long to respond. Please try again with a shorter conversation history or more focused requirements.';
+    }
+    
+    addMessage(errorMessage, 'assistant');
+    
+    // Suggest alternative actions
+    updateSuggestedButtons(['Try again', 'Start over', 'Contact support']);
   } finally {
     // Hide loading modal
     loadingModal.classList.remove('active');
@@ -255,28 +276,44 @@ async function fetchNsightzTemplate(type) {
 
 // Helper function to customize template based on conversation
 async function customizeTemplate(template) {
-  // In a real implementation, this would use AI to customize based on conversation
-  // For now, use mock implementation
+  try {
+    // Prepare a more focused conversation history
+    const relevantHistory = conversationHistory.slice(-10); // Only use last 10 messages
 
-  // Send request to generate resource
-  const response = await fetch(RESOURCE_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      resourceType: currentResourceType,
-      conversationHistory: conversationHistory,
-      userSchoolLevel: schoolLevelSelect.value
-    })
-  });
+    // Send request to generate resource with timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 second timeout
 
-  if (!response.ok) {
-    throw new Error('Failed to generate resource');
+    const response = await fetch(RESOURCE_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        resourceType: currentResourceType,
+        conversationHistory: relevantHistory,
+        userSchoolLevel: schoolLevelSelect.value
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      if (response.status === 504) {
+        throw new Error('Server timeout - The request took too long to process');
+      }
+      throw new Error('Failed to generate resource');
+    }
+
+    const data = await response.json();
+    return data.resource;
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new Error('Resource generation timed out');
+    }
+    throw error;
   }
-
-  const data = await response.json();
-  return data.resource;
 }
 
 // Utility Functions
