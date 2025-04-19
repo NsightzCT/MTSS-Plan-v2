@@ -24,11 +24,15 @@
     },
     {
       "src": "/interventions",
-      "dest": "server.js"
+      "dest": "/interventions/index.html"
+    },
+    {
+      "src": "/interventions/(.*\\.(js|css|png|jpg|svg))",
+      "dest": "/interventions/$1"
     },
     {
       "src": "/interventions/(.*)",
-      "dest": "server.js"
+      "dest": "/interventions/index.html"
     }
   ],
   "cleanUrls": true,
