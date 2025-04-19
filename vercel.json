@@ -12,6 +12,10 @@
   ],
   "routes": [
     {
+      "src": "/api/(.*)",
+      "dest": "server.js"
+    },
+    {
       "src": "/interventions/api/(.*)",
       "dest": "server.js"
     },
@@ -20,18 +24,22 @@
     },
     {
       "src": "/interventions",
-      "dest": "public/index.html"
+      "dest": "server.js"
     },
     {
       "src": "/interventions/(.*)",
-      "dest": "public/$1"
+      "dest": "server.js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "server.js"
     }
   ],
   "cleanUrls": true,
   "trailingSlash": false,
   "headers": [
     {
-      "source": "/interventions/(.*)",
+      "source": "/(.*)",
       "headers": [
         {
           "key": "Cache-Control",
