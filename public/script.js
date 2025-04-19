@@ -34,99 +34,32 @@ let markdownConverter = new showdown.Converter({
 });
 
 // Main Functions
-async function sendMessage() {
-  const message = userInput.value.trim();
-  if (message === '') return;
-
-  // Add user message to UI
-  addMessage(message, 'user');
-
-  // Clear input field
-  userInput.value = '';
-
-  // Clear suggested buttons
-  suggestedButtonsContainer.innerHTML = '';
-
-  // Show loading indicator
-  const loadingMessage = addMessage('Thinking...', 'assistant', true);
-
+async function sendMessage(message, retryCount = 0) {
   try {
-    // Check rate limiting
-    const now = Date.now();
-    if (now - lastApiCallTime < MIN_API_CALL_INTERVAL) {
-      // Wait if needed
-      await new Promise(resolve => setTimeout(resolve, MIN_API_CALL_INTERVAL - (now - lastApiCallTime)));
-    }
-    lastApiCallTime = Date.now();
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messages: [...conversationHistory, { sender: 'user', text: message }],
+        userSchoolLevel: schoolLevelSelect.value,
+        resourceType: currentResourceType
+      })
+    });
 
-    // Determine resource type if not already set
-    if (!currentResourceType) {
-      if (message.toLowerCase().includes('intervention menu')) {
-        currentResourceType = 'interventionMenu';
-      } else if ((message.toLowerCase().includes('student') && message.toLowerCase().includes('plan')) || 
-                message.toLowerCase().includes('individual')) {
-        currentResourceType = 'studentPlan';
-      } else if (message.toLowerCase().includes('progress monitoring')) {
-        currentResourceType = 'progressMonitoring';
+    if (!response.ok) {
+      if (response.status === 429) {
+        throw new Error('Please wait a moment before making another request. The system is processing your previous request.');
       }
-    }
-
-    // Send message to server with retry logic
-    let retryCount = 0;
-    let response;
-    let lastError;
-
-    while (retryCount < MAX_RETRIES) {
-      try {
-        response = await fetch(API_ENDPOINT, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            messages: conversationHistory,
-            userSchoolLevel: schoolLevelSelect.value,
-            resourceType: currentResourceType
-          })
-        });
-
-        if (response.ok) {
-          break;
-        }
-
-        // Handle specific API errors
-        if (response.status === 429) {
-          throw new Error('Please wait a moment before making another request. The system is processing your previous request.');
-        }
-
-        // Log the error for debugging
-        console.error(`API call failed (attempt ${retryCount + 1}):`, {
-          status: response.status,
-          statusText: response.statusText
-        });
-
-        lastError = new Error(`Server responded with status: ${response.status}`);
-        retryCount++;
-        
-        if (retryCount < MAX_RETRIES) {
-          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * retryCount));
-        }
-      } catch (error) {
-        console.error(`API call error (attempt ${retryCount + 1}):`, error);
-        lastError = error;
-        retryCount++;
-        
-        if (retryCount < MAX_RETRIES) {
-          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * retryCount));
-        }
-      }
-    }
-
-    if (!response || !response.ok) {
-      throw lastError || new Error('Failed to get response from server after multiple attempts');
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
 
     const data = await response.json();
+    
+    if (data.error) {
+      throw new Error(data.error);
+    }
 
     // Remove loading message
     messagesContainer.removeChild(loadingMessage);
@@ -184,22 +117,15 @@ async function sendMessage() {
       }, 2000);
     }
   } catch (error) {
-    console.error('Error:', error);
-
-    // Remove loading message
-    messagesContainer.removeChild(loadingMessage);
-
-    // Add error message with more details
-    let errorMessage = 'Sorry, there was an error processing your request. ';
-    if (error.message.includes('429')) {
-      errorMessage += 'Please wait a moment and try again.';
-    } else if (error.message.includes('Failed to get response')) {
-      errorMessage += 'The server is not responding. Please try again in a few moments.';
-    } else {
-      errorMessage += 'Please try again.';
+    console.error(`API call error (attempt ${retryCount + 1}):`, error);
+    
+    if (retryCount < 2) {
+      // Wait for 2 seconds before retrying
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      return sendMessage(message, retryCount + 1);
     }
     
-    addMessage(errorMessage, 'assistant');
+    throw error;
   }
 }
 
