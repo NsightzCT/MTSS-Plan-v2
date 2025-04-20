@@ -16,7 +16,6 @@ const PORT = process.env.PORT || 3000;
 
 // Configure Express to trust proxy headers for Vercel deployment
 app.set('trust proxy', true);
-app.enable('trust proxy');
 
 // Middleware
 app.use(cors());
@@ -25,23 +24,18 @@ app.use(bodyParser.json());
 // Add debug logging middleware
 app.use((req, res, next) => {
   console.log(`[DEBUG] Incoming request: ${req.method} ${req.path}`);
-  console.log('[DEBUG] Headers:', req.headers);
   next();
 });
 
 // Rate limiting configuration
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
+  max: 100,
   message: {
     error: 'Too many requests from this IP, please try again later.'
   },
   standardHeaders: true,
-  legacyHeaders: false,
-  skip: (req) => {
-    // Skip rate limiting if we can't determine the IP
-    return !req.ip;
-  }
+  legacyHeaders: false
 });
 
 // Apply rate limiting to all routes
@@ -67,9 +61,8 @@ try {
 // Serve static files from the public directory
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Handle root path and /interventions path
-app.get(['/', '/interventions'], (req, res) => {
-  console.log(`[DEBUG] Serving index.html for path: ${req.path}`);
+// Handle root path
+app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
@@ -79,8 +72,8 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-// Catch-all route for the interventions path to handle client-side routing
-app.get('/interventions/*', (req, res) => {
+// Catch-all route for client-side routing
+app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 

@@ -12,23 +12,15 @@
   ],
   "routes": [
     {
-      "src": "/interventions/api/(.*)",
-      "dest": "server.js"
-    },
-    {
       "src": "/api/(.*)",
       "dest": "server.js"
     },
     {
-      "src": "/interventions",
-      "dest": "server.js"
-    },
-    {
-      "src": "/interventions/(.*)",
-      "dest": "server.js"
-    },
-    {
       "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "server.js"
     }
   ],
   "cleanUrls": true,
